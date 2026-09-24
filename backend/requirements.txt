@@ -1,0 +1,11 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.0.0
+numpy
+soundfile
+transformers
+loguru
+misaki[en]>=0.9.4
+vig2p==0.1.0
+huggingface_hub
+python-multipart

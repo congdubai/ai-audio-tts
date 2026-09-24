@@ -1,0 +1,9 @@
+torch
+numpy
+soundfile
+huggingface_hub
+transformers
+loguru
+misaki[en]>=0.9.4
+vig2p==0.1.0
+gradio

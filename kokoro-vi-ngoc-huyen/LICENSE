@@ -1,0 +1,3 @@
+This repository includes patched Kokoro inference code derived from Kokoro-82M,
+which is distributed under the Apache License 2.0. See the upstream project:
+https://huggingface.co/hexgrad/Kokoro-82M

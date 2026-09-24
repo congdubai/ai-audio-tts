@@ -1,0 +1,13 @@
+{
+  "name": "kokoro-vi-ngoc-huyen",
+  "base_model": "hexgrad/Kokoro-82M",
+  "language": "vi",
+  "voice": "Ngọc Huyền",
+  "g2p": "vig2p==0.1.0",
+  "source_checkpoint": "epoch_2nd_00001.pth",
+  "source_checkpoint_val_loss": 0.2805994749069214,
+  "sample_rate": 24000,
+  "model_file": "model/kokoro_vi_ngoc_huyen.pth",
+  "voicepack_file": "voices/ngoc_huyen.pt",
+  "config_file": "config.json"
+}

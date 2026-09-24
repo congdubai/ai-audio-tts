@@ -1,0 +1,28 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Node / React
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Outputs and DB
+backend/outputs/*.wav
+backend/*.db
+outputs/
+
+# Large Model weights (can be cloned from HuggingFace dinhthuan/kokoro-vi-ngoc-huyen)
+# *.pth
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
