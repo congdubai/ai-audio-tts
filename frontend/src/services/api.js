@@ -1,4 +1,5 @@
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : '127.0.0.1';
+const API_BASE_URL = `http://${API_HOST}:8000`;
 
 export async function checkHealth() {
   try {
