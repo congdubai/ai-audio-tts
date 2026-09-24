@@ -52,17 +52,39 @@ export default function VideoDubber({ showToast }) {
     }
   };
 
-  const handleFileChange = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      const validVideos = files.filter((f) => f.type.startsWith('video/'));
-      if (validVideos.length === 0) {
-        showToast('Vui lòng chọn các file video hợp lệ (.mp4, .mov, .mkv, .webm)', 'error');
-        return;
-      }
-      setVideoFiles((prev) => [...prev, ...validVideos]);
-      setDubbedResult(null);
+  const isVideoFile = (f) => {
+    if (f.type && f.type.startsWith('video/')) return true;
+    return /\.(mp4|mov|mkv|webm|avi|flv|wmv|m4v|3gp)$/i.test(f.name);
+  };
+
+  const addValidFiles = (files) => {
+    const validVideos = Array.from(files).filter(isVideoFile);
+    if (validVideos.length === 0) {
+      showToast('Vui lòng chọn các file video (.mp4, .mov, .mkv, .webm, .avi)', 'error');
+      return;
     }
+    setVideoFiles((prev) => [...prev, ...validVideos]);
+    setDubbedResult(null);
+  };
+
+  const handleFileChange = (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      addValidFiles(files);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      addValidFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
   };
 
   const handleRemoveSingleVideo = (indexToRemove) => {
@@ -173,12 +195,14 @@ export default function VideoDubber({ showToast }) {
             <div
               className="dropzone-box"
               onClick={() => fileInputRef.current?.click()}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
             >
               <input
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileChange}
-                accept="video/*"
+                accept="video/*,.mp4,.mov,.mkv,.webm,.avi"
                 multiple
                 style={{ display: 'none' }}
               />

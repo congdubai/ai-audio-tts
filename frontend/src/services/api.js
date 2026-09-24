@@ -1,5 +1,15 @@
-const API_HOST = typeof window !== 'undefined' && window.location.hostname ? window.location.hostname : '127.0.0.1';
-const API_BASE_URL = `http://${API_HOST}:8000`;
+function getApiBaseUrl() {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || !host) {
+      return 'http://127.0.0.1:8000';
+    }
+    return `http://${host}:8000`;
+  }
+  return 'http://127.0.0.1:8000';
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 export async function checkHealth() {
   try {
@@ -60,7 +70,6 @@ export async function deleteHistoryItem(id) {
 export async function dubVideo(videoFiles, text, speed = 1.0, removeOriginalAudio = true, durationMode = 'full_video') {
   const formData = new FormData();
   
-  // Support both single file or array of files
   const filesArray = Array.isArray(videoFiles) ? videoFiles : [videoFiles];
   for (const file of filesArray) {
     formData.append('videos', file);
