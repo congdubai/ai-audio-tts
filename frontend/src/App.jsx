@@ -3,10 +3,12 @@ import Header from './components/Header';
 import TextEditor from './components/TextEditor';
 import AudioPlayer from './components/AudioPlayer';
 import HistoryList from './components/HistoryList';
+import VideoDubber from './components/VideoDubber';
 import { checkHealth, synthesizeText, fetchHistory, deleteHistoryItem } from './services/api';
-import { AlertCircle, CheckCircle, Sparkles } from 'lucide-react';
+import { AlertCircle, CheckCircle, Sparkles, Volume2, Film } from 'lucide-react';
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('tts'); // 'tts' | 'video'
   const [text, setText] = useState('Xin chào, tôi là giọng đọc Ngọc Huyền. Chúc bạn một ngày tốt lành và tràn đầy năng lượng!');
   const [speed, setSpeed] = useState(1.0);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,46 +103,78 @@ export default function App() {
       <div className="main-layout">
         <Header serverStatus={serverStatus} />
 
-        <main className="content-grid">
-          {/* Left Column: Input & Controls */}
-          <section className="column-left">
-            <TextEditor
-              text={text}
-              setText={setText}
-              speed={speed}
-              setSpeed={setSpeed}
-              isLoading={isLoading}
-              onSynthesize={handleSynthesize}
-            />
-          </section>
+        {/* Tab Navigation */}
+        <div className="tab-navigation">
+          <button
+            type="button"
+            className={`nav-tab-btn ${activeTab === 'tts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('tts')}
+          >
+            <Volume2 size={18} />
+            <span>Chuyển Văn Bản → Giọng Nói</span>
+          </button>
 
-          {/* Right Column: Audio Player & History */}
-          <section className="column-right">
-            {currentAudio ? (
-              <AudioPlayer audioData={currentAudio} />
-            ) : (
-              <div className="card player-card placeholder">
-                <div className="placeholder-content">
-                  <div className="placeholder-pulse">
-                    <Sparkles size={36} className="placeholder-icon" />
+          <button
+            type="button"
+            className={`nav-tab-btn ${activeTab === 'video' ? 'active' : ''}`}
+            onClick={() => setActiveTab('video')}
+          >
+            <Film size={18} />
+            <span>Lồng Tiếng Video (Video Dubbing)</span>
+            <span className="tab-new-badge">Mới</span>
+          </button>
+        </div>
+
+        {/* Tab 1: Text-to-Speech */}
+        {activeTab === 'tts' && (
+          <main className="content-grid animate-fade-in">
+            {/* Left Column: Input & Controls */}
+            <section className="column-left">
+              <TextEditor
+                text={text}
+                setText={setText}
+                speed={speed}
+                setSpeed={setSpeed}
+                isLoading={isLoading}
+                onSynthesize={handleSynthesize}
+              />
+            </section>
+
+            {/* Right Column: Audio Player & History */}
+            <section className="column-right">
+              {currentAudio ? (
+                <AudioPlayer audioData={currentAudio} />
+              ) : (
+                <div className="card player-card placeholder">
+                  <div className="placeholder-content">
+                    <div className="placeholder-pulse">
+                      <Sparkles size={36} className="placeholder-icon" />
+                    </div>
+                    <h3>Sẵn sàng tạo giọng đọc</h3>
+                    <p>Nhập văn bản và bấm "Tạo Giọng Nói" để nghe thử & tải file WAV</p>
                   </div>
-                  <h3>Sẵn sàng tạo giọng đọc</h3>
-                  <p>Nhập văn bản và bấm "Tạo Giọng Nói" để nghe thử & tải file WAV</p>
                 </div>
-              </div>
-            )}
+              )}
 
-            <HistoryList
-              history={history}
-              onSelectAudio={(item) => setCurrentAudio(item)}
-              onDeleteAudio={handleDeleteHistory}
-            />
-          </section>
-        </main>
+              <HistoryList
+                history={history}
+                onSelectAudio={(item) => setCurrentAudio(item)}
+                onDeleteAudio={handleDeleteHistory}
+              />
+            </section>
+          </main>
+        )}
+
+        {/* Tab 2: Video Dubbing */}
+        {activeTab === 'video' && (
+          <main className="animate-fade-in">
+            <VideoDubber showToast={showToast} />
+          </main>
+        )}
 
         <footer className="footer-bar">
           <p>
-            Kokoro Vietnamese TTS Engine • Model Finetuned Giọng Ngọc Huyền • 24kHz High-Fidelity Audio
+            Kokoro Vietnamese TTS Engine • Model Finetuned Giọng Ngọc Huyền • Video Dubbing with FFmpeg
           </p>
         </footer>
       </div>
