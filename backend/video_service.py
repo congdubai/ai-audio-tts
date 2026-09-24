@@ -26,11 +26,6 @@ class VideoDubbingService:
         remove_original_audio: bool = True,
         duration_mode: str = "full_video"  # "full_video" | "match_voice" | "loop_voice"
     ) -> Dict[str, Any]:
-        """
-        1. Synthesize Vietnamese TTS audio using Kokoro model.
-        2. If multiple videos: Concatenate all clips seamlessly.
-        3. Merge video + TTS audio according to duration_mode.
-        """
         if not video_paths:
             raise ValueError("Cần ít nhất một file video để xử lý.")
 
@@ -47,135 +42,110 @@ class VideoDubbingService:
         output_filepath = VIDEO_OUTPUTS_DIR / output_filename
         ffmpeg_bin = cls.get_ffmpeg_bin()
 
-        # Build audio filter & duration flags
-        # If duration_mode == "full_video": pad audio with silence so full video plays
-        # If duration_mode == "match_voice": cut video with -shortest
-        # If duration_mode == "loop_voice": loop audio until video ends
-        
-        is_cut_to_voice = (duration_mode == "match_voice")
-        is_loop_voice = (duration_mode == "loop_voice")
-
         if len(video_paths) == 1:
             video_path = video_paths[0]
             
-            if is_cut_to_voice:
+            if duration_mode == "match_voice":
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", str(video_path),
                     "-i", str(audio_file_path),
-                    "-c:v", "copy",
-                    "-c:a", "aac", "-b:a", "192k",
                     "-map", "0:v:0",
                     "-map", "1:a:0",
+                    "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "192k",
                     "-shortest",
                     str(output_filepath)
                 ]
-            elif is_loop_voice:
+            elif duration_mode == "loop_voice":
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", str(video_path),
                     "-stream_loop", "-1",
                     "-i", str(audio_file_path),
-                    "-c:v", "copy",
-                    "-c:a", "aac", "-b:a", "192k",
                     "-map", "0:v:0",
                     "-map", "1:a:0",
+                    "-c:v", "copy",
+                    "-c:a", "aac", "-b:a", "192k",
                     "-shortest",
                     str(output_filepath)
                 ]
             else:
-                # Default "full_video": Keep full video length, pad audio with silence if needed
+                # Default "full_video": Keep entire video length
                 cmd = [
                     ffmpeg_bin, "-y",
                     "-i", str(video_path),
                     "-i", str(audio_file_path),
+                    "-filter_complex", "[1:a:0]apad[aout]",
+                    "-map", "0:v:0",
+                    "-map", "[aout]",
                     "-c:v", "copy",
                     "-c:a", "aac", "-b:a", "192k",
-                    "-af", "apad",
-                    "-map", "0:v:0",
-                    "-map", "1:a:0",
                     "-shortest",
                     str(output_filepath)
                 ]
 
             result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if result.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
-                # Re-encode fallback
-                cmd_reencode = [
+                # Fallback with video re-encode
+                cmd_fallback = [
                     ffmpeg_bin, "-y",
                     "-i", str(video_path),
                     "-i", str(audio_file_path),
-                    "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "192k",
-                    "-af", "apad" if not is_cut_to_voice else "anull",
+                    "-filter_complex", "[1:a:0]apad[aout]" if duration_mode == "full_video" else "[1:a:0]anull[aout]",
                     "-map", "0:v:0",
-                    "-map", "1:a:0",
-                    *("-shortest",),
+                    "-map", "[aout]",
+                    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-b:a", "192k",
+                    "-shortest",
                     str(output_filepath)
                 ]
-                result_reencode = subprocess.run(cmd_reencode, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                if result_reencode.returncode != 0:
-                    raise RuntimeError(f"FFmpeg error: {result_reencode.stderr}")
+                result_fallback = subprocess.run(cmd_fallback, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if result_fallback.returncode != 0:
+                    raise RuntimeError(f"FFmpeg error: {result_fallback.stderr}")
 
         else:
-            # Multi-video concatenation: Always normalize frame size, rate, and concat robustly
+            # Multi-video concatenation: Scale, pad, setsar, and concat in filter_complex
+            num_vids = len(video_paths)
             inputs = []
             filter_parts = []
+            
             for idx, vp in enumerate(video_paths):
                 inputs.extend(["-i", str(vp)])
                 filter_parts.append(
                     f"[{idx}:v:0]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[v{idx}];"
                 )
 
-            concat_streams = "".join([f"[v{i}]" for i in range(len(video_paths))])
-            filter_str = "".join(filter_parts) + f"{concat_streams}concat=n={len(video_paths)}:v=1:a=0[v_out]"
+            concat_v = "".join([f"[v{i}]" for i in range(num_vids)])
+            filter_parts.append(f"{concat_v}concat=n={num_vids}:v=1:a=0[vout];")
 
-            if is_cut_to_voice:
-                cmd_complex = [
-                    ffmpeg_bin, "-y",
-                    *inputs,
-                    "-i", str(audio_file_path),
-                    "-filter_complex", filter_str,
-                    "-map", "[v_out]",
-                    "-map", f"{len(video_paths)}:a:0",
-                    "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "192k",
-                    "-shortest",
-                    str(output_filepath)
-                ]
-            elif is_loop_voice:
-                cmd_complex = [
-                    ffmpeg_bin, "-y",
-                    *inputs,
-                    "-stream_loop", "-1",
-                    "-i", str(audio_file_path),
-                    "-filter_complex", filter_str,
-                    "-map", "[v_out]",
-                    "-map", f"{len(video_paths)}:a:0",
-                    "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "192k",
-                    "-shortest",
-                    str(output_filepath)
-                ]
+            # Audio handling in same filter_complex
+            if duration_mode == "loop_voice":
+                filter_parts.append(f"[{num_vids}:a:0]aloop=loop=-1:size=2147483647[aout]")
+            elif duration_mode == "match_voice":
+                filter_parts.append(f"[{num_vids}:a:0]anull[aout]")
             else:
-                # Default "full_video": Keep all videos completely (9m + 40s = 9m40s)
-                cmd_complex = [
-                    ffmpeg_bin, "-y",
-                    *inputs,
-                    "-i", str(audio_file_path),
-                    "-filter_complex", filter_str,
-                    "-map", "[v_out]",
-                    "-map", f"{len(video_paths)}:a:0",
-                    "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "192k",
-                    "-af", "apad",
-                    "-shortest",
-                    str(output_filepath)
-                ]
+                # Default "full_video"
+                filter_parts.append(f"[{num_vids}:a:0]apad[aout]")
+
+            full_filter = "".join(filter_parts)
+
+            cmd_complex = [
+                ffmpeg_bin, "-y",
+                *inputs,
+                "-i", str(audio_file_path),
+                "-filter_complex", full_filter,
+                "-map", "[vout]",
+                "-map", "[aout]",
+                "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-b:a", "192k",
+                "-shortest",
+                str(output_filepath)
+            ]
 
             result_complex = subprocess.run(cmd_complex, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if result_complex.returncode != 0:
-                raise RuntimeError(f"FFmpeg multi-video complex error: {result_complex.stderr}")
+            if result_complex.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
+                raise RuntimeError(f"FFmpeg multi-video error: {result_complex.stderr}")
 
         if not output_filepath.exists() or output_filepath.stat().st_size == 0:
             raise RuntimeError("Tạo file video lồng tiếng thất bại.")
