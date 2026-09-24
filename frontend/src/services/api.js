@@ -56,7 +56,7 @@ export async function deleteHistoryItem(id) {
 
 // ==================== Multi-Video Dubbing APIs ====================
 
-export async function dubVideo(videoFiles, text, speed = 1.0, removeOriginalAudio = true) {
+export async function dubVideo(videoFiles, text, speed = 1.0, removeOriginalAudio = true, durationMode = 'full_video') {
   const formData = new FormData();
   
   // Support both single file or array of files
@@ -68,6 +68,7 @@ export async function dubVideo(videoFiles, text, speed = 1.0, removeOriginalAudi
   formData.append('text', text);
   formData.append('speed', speed.toString());
   formData.append('remove_original_audio', removeOriginalAudio ? 'true' : 'false');
+  formData.append('duration_mode', durationMode);
 
   const res = await fetch(`${API_BASE_URL}/api/video/dub`, {
     method: 'POST',

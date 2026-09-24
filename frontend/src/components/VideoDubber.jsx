@@ -30,6 +30,7 @@ export default function VideoDubber({ showToast }) {
   const [text, setText] = useState('Đoạn video này ghi lại khoảnh khắc thiên nhiên tuyệt đẹp trong một buổi chiều hoàng hôn rực rỡ.');
   const [speed, setSpeed] = useState(1.0);
   const [removeOriginalAudio, setRemoveOriginalAudio] = useState(true);
+  const [durationMode, setDurationMode] = useState('full_video'); // 'full_video' | 'match_voice' | 'loop_voice'
   const [isLoading, setIsLoading] = useState(false);
   const [dubbedResult, setDubbedResult] = useState(null);
   const [videoHistory, setVideoHistory] = useState([]);
@@ -107,7 +108,7 @@ export default function VideoDubber({ showToast }) {
 
     setIsLoading(true);
     try {
-      const result = await dubVideo(videoFiles, text, speed, removeOriginalAudio);
+      const result = await dubVideo(videoFiles, text, speed, removeOriginalAudio, durationMode);
       setDubbedResult(result);
       showToast(`Đã nối & lồng tiếng thành công ${videoFiles.length} video!`, 'success');
       loadHistory();
@@ -339,6 +340,45 @@ export default function VideoDubber({ showToast }) {
                 className="speed-slider"
                 disabled={isLoading}
               />
+            </div>
+
+            {/* Duration Mode Options */}
+            <div className="duration-mode-box">
+              <span className="duration-mode-title">Chế độ độ dài video:</span>
+              <div className="duration-options-list">
+                <label className={`duration-option-pill ${durationMode === 'full_video' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="duration_mode"
+                    value="full_video"
+                    checked={durationMode === 'full_video'}
+                    onChange={() => setDurationMode('full_video')}
+                  />
+                  <span>🎬 Giữ trọn vẹn toàn bộ độ dài Video (Nối hết tất cả clip)</span>
+                </label>
+
+                <label className={`duration-option-pill ${durationMode === 'match_voice' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="duration_mode"
+                    value="match_voice"
+                    checked={durationMode === 'match_voice'}
+                    onChange={() => setDurationMode('match_voice')}
+                  />
+                  <span>✂️ Cắt ngắn video theo độ dài giọng đọc</span>
+                </label>
+
+                <label className={`duration-option-pill ${durationMode === 'loop_voice' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="duration_mode"
+                    value="loop_voice"
+                    checked={durationMode === 'loop_voice'}
+                    onChange={() => setDurationMode('loop_voice')}
+                  />
+                  <span>🔁 Lặp lại giọng đọc đến hết video</span>
+                </label>
+              </div>
             </div>
 
             <label className="checkbox-control">

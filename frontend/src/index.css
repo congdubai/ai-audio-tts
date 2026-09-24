@@ -599,6 +599,57 @@ html, body, #root {
   display: block;
 }
 
+/* Duration Mode Selector */
+.duration-mode-box {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.duration-mode-title {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.duration-options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.duration-option-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.duration-option-pill input {
+  accent-color: var(--primary);
+}
+
+.duration-option-pill:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+}
+
+.duration-option-pill.active {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.35);
+  color: #c7d2fe;
+}
+
 /* Checkbox */
 .checkbox-control {
   display: flex;

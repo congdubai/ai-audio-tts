@@ -175,7 +175,8 @@ async def dub_multiple_videos(
     videos: List[UploadFile] = File(...),
     text: str = Form(...),
     speed: float = Form(1.0),
-    remove_original_audio: bool = Form(True)
+    remove_original_audio: bool = Form(True),
+    duration_mode: str = Form("full_video")  # "full_video" | "match_voice" | "loop_voice"
 ):
     temp_paths: List[Path] = []
     try:
@@ -198,7 +199,8 @@ async def dub_multiple_videos(
             video_paths=temp_paths,
             text=clean_text,
             speed=speed,
-            remove_original_audio=remove_original_audio
+            remove_original_audio=remove_original_audio,
+            duration_mode=duration_mode
         )
 
         # Cleanup uploaded raw videos
