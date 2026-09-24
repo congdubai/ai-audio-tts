@@ -1,6 +1,7 @@
 import os
 import shutil
 from pathlib import Path
+from typing import List
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,9 +37,9 @@ async def lifespan(app: FastAPI):
     print("[*] Server shutting down...")
 
 app = FastAPI(
-    title="Vietnamese TTS & Video Dubbing API (Kokoro - Ngọc Huyền)",
-    description="API chuyển đổi văn bản thành giọng nói & lồng tiếng video tiếng Việt sử dụng Model Kokoro finetuned Ngọc Huyền",
-    version="1.1.0",
+    title="Vietnamese TTS & Multi-Video Dubbing API (Kokoro - Ngọc Huyền)",
+    description="API chuyển đổi văn bản thành giọng nói & lồng tiếng nối nhiều video tiếng Việt",
+    version="1.2.0",
     lifespan=lifespan
 )
 
@@ -59,7 +60,7 @@ async def health_check():
         "model_ready": engine.is_ready,
         "device": engine.device,
         "voice": "Ngọc Huyền (Vietnamese)",
-        "features": ["text-to-speech", "video-dubbing"]
+        "features": ["text-to-speech", "video-dubbing", "multi-video-concat"]
     }
 
 # ==================== TTS Endpoints ====================
@@ -166,41 +167,46 @@ async def delete_history(audio_id: str):
     delete_history_entry(audio_id)
     return {"status": "success", "message": "Đã xóa bản ghi thành công."}
 
-# ==================== Video Dubbing Endpoints ====================
+# ==================== Multi-Video Dubbing Endpoints ====================
 
 @app.post("/api/video/dub")
-async def dub_video(
-    video: UploadFile = File(...),
+async def dub_multiple_videos(
+    videos: List[UploadFile] = File(...),
     text: str = Form(...),
     speed: float = Form(1.0),
     remove_original_audio: bool = Form(True)
 ):
+    temp_paths: List[Path] = []
     try:
         clean_text = text.strip()
         if not clean_text:
             raise HTTPException(status_code=400, detail="Văn bản lồng tiếng không được để trống.")
+        if not videos or len(videos) == 0:
+            raise HTTPException(status_code=400, detail="Vui lòng tải lên ít nhất 1 video.")
 
-        # Save uploaded video temporarily
-        temp_video_filename = f"upload_{uuid.uuid4()}_{video.filename}"
-        temp_video_path = VIDEO_UPLOADS_DIR / temp_video_filename
-        
-        with open(temp_video_path, "wb") as buffer:
-            shutil.copyfileobj(video.file, buffer)
+        # Save all uploaded videos to temporary files
+        for idx, video in enumerate(videos):
+            temp_filename = f"upload_{idx}_{uuid.uuid4()}_{video.filename}"
+            temp_path = VIDEO_UPLOADS_DIR / temp_filename
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(video.file, buffer)
+            temp_paths.append(temp_path)
 
-        # Process dubbing
+        # Process multi-video dubbing and concatenation
         result = VideoDubbingService.process_video_dubbing(
-            video_path=temp_video_path,
+            video_paths=temp_paths,
             text=clean_text,
             speed=speed,
             remove_original_audio=remove_original_audio
         )
 
-        # Cleanup uploaded raw video
-        if temp_video_path.exists():
-            try:
-                os.remove(temp_video_path)
-            except Exception:
-                pass
+        # Cleanup uploaded raw videos
+        for tp in temp_paths:
+            if tp.exists():
+                try:
+                    os.remove(tp)
+                except Exception:
+                    pass
 
         # Save to video history
         add_video_history_entry(
@@ -219,9 +225,17 @@ async def dub_video(
             "duration": result["audio_duration"],
             "video_url": f"/api/video/stream/{result['id']}",
             "download_url": f"/api/video/download/{result['id']}",
-            "file_size": result["file_size"]
+            "file_size": result["file_size"],
+            "video_count": result.get("video_count", len(videos))
         }
     except Exception as e:
+        # Cleanup on error
+        for tp in temp_paths:
+            if tp.exists():
+                try:
+                    os.remove(tp)
+                except Exception:
+                    pass
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Lỗi khi xử lý lồng tiếng video: {str(e)}"

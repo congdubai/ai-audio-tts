@@ -11,6 +11,10 @@ import {
   Gauge,
   CheckCircle2,
   VolumeX,
+  Plus,
+  ArrowUp,
+  ArrowDown,
+  Layers,
 } from 'lucide-react';
 import { dubVideo, fetchVideoHistory, deleteVideoHistoryItem } from '../services/api';
 
@@ -21,8 +25,8 @@ const VIDEO_SAMPLE_SCRIPTS = [
 ];
 
 export default function VideoDubber({ showToast }) {
-  const [videoFile, setVideoFile] = useState(null);
-  const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
+  const [videoFiles, setVideoFiles] = useState([]);
+  const [selectedPreviewIndex, setSelectedPreviewIndex] = useState(0);
   const [text, setText] = useState('Đoạn video này ghi lại khoảnh khắc thiên nhiên tuyệt đẹp trong một buổi chiều hoàng hôn rực rỡ.');
   const [speed, setSpeed] = useState(1.0);
   const [removeOriginalAudio, setRemoveOriginalAudio] = useState(true);
@@ -31,6 +35,7 @@ export default function VideoDubber({ showToast }) {
   const [videoHistory, setVideoHistory] = useState([]);
 
   const fileInputRef = useRef(null);
+  const addMoreInputRef = useRef(null);
 
   // Load video history on mount
   React.useEffect(() => {
@@ -47,32 +52,52 @@ export default function VideoDubber({ showToast }) {
   };
 
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('video/')) {
-        showToast('Vui lòng chọn một file video hợp lệ (.mp4, .mov, .mkv, .webm)', 'error');
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      const validVideos = files.filter((f) => f.type.startsWith('video/'));
+      if (validVideos.length === 0) {
+        showToast('Vui lòng chọn các file video hợp lệ (.mp4, .mov, .mkv, .webm)', 'error');
         return;
       }
-      setVideoFile(file);
-      setVideoPreviewUrl(URL.createObjectURL(file));
+      setVideoFiles((prev) => [...prev, ...validVideos]);
       setDubbedResult(null);
     }
   };
 
-  const handleRemoveFile = () => {
-    setVideoFile(null);
-    if (videoPreviewUrl) {
-      URL.revokeObjectURL(videoPreviewUrl);
-      setVideoPreviewUrl(null);
-    }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+  const handleRemoveSingleVideo = (indexToRemove) => {
+    setVideoFiles((prev) => {
+      const updated = prev.filter((_, idx) => idx !== indexToRemove);
+      if (selectedPreviewIndex >= updated.length) {
+        setSelectedPreviewIndex(Math.max(0, updated.length - 1));
+      }
+      return updated;
+    });
+  };
+
+  const handleClearAllVideos = () => {
+    setVideoFiles([]);
+    setSelectedPreviewIndex(0);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (addMoreInputRef.current) addMoreInputRef.current.value = '';
+  };
+
+  const moveVideoOrder = (index, direction) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= videoFiles.length) return;
+
+    setVideoFiles((prev) => {
+      const copy = [...prev];
+      const temp = copy[index];
+      copy[index] = copy[targetIndex];
+      copy[targetIndex] = temp;
+      return copy;
+    });
+    setSelectedPreviewIndex(targetIndex);
   };
 
   const handleProcessDubbing = async () => {
-    if (!videoFile) {
-      showToast('Vui lòng tải lên một video trước!', 'error');
+    if (videoFiles.length === 0) {
+      showToast('Vui lòng tải lên ít nhất 1 video!', 'error');
       return;
     }
     if (!text.trim()) {
@@ -82,9 +107,9 @@ export default function VideoDubber({ showToast }) {
 
     setIsLoading(true);
     try {
-      const result = await dubVideo(videoFile, text, speed, removeOriginalAudio);
+      const result = await dubVideo(videoFiles, text, speed, removeOriginalAudio);
       setDubbedResult(result);
-      showToast('Lồng tiếng video thành công!', 'success');
+      showToast(`Đã nối & lồng tiếng thành công ${videoFiles.length} video!`, 'success');
       loadHistory();
     } catch (error) {
       console.error('Dubbing error:', error);
@@ -112,30 +137,38 @@ export default function VideoDubber({ showToast }) {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
+  const totalFilesSize = videoFiles.reduce((acc, f) => acc + f.size, 0);
+  const currentPreviewFile = videoFiles[selectedPreviewIndex];
+  const currentPreviewUrl = currentPreviewFile ? URL.createObjectURL(currentPreviewFile) : null;
+
   return (
     <div className="content-grid">
-      {/* Left Column: Video Upload & Script */}
+      {/* Left Column: Multi-Video Upload & Script */}
       <section className="column-left">
         <div className="card">
           <div className="card-header">
             <div className="card-title-group">
               <Film size={20} className="card-header-icon" />
-              <h2 className="card-title">Tải Lên Video & Lời Bình</h2>
+              <h2 className="card-title">
+                {videoFiles.length > 1
+                  ? `Nối & Lồng Tiếng (${videoFiles.length} Video)`
+                  : 'Tải Lên Video & Lời Bình'}
+              </h2>
             </div>
-            {videoFile && (
+            {videoFiles.length > 0 && (
               <button
                 type="button"
                 className="btn-text-action"
-                onClick={handleRemoveFile}
-                title="Đổi video khác"
+                onClick={handleClearAllVideos}
+                title="Xóa tất cả video"
               >
-                <Trash2 size={16} /> Đổi video
+                <Trash2 size={16} /> Xóa tất cả
               </button>
             )}
           </div>
 
-          {/* Upload Dropzone */}
-          {!videoFile ? (
+          {/* Upload Dropzone (Supports Multiple Selection) */}
+          {videoFiles.length === 0 ? (
             <div
               className="dropzone-box"
               onClick={() => fileInputRef.current?.click()}
@@ -145,26 +178,110 @@ export default function VideoDubber({ showToast }) {
                 ref={fileInputRef}
                 onChange={handleFileChange}
                 accept="video/*"
+                multiple
                 style={{ display: 'none' }}
               />
               <div className="dropzone-content">
                 <div className="dropzone-icon-pulse">
                   <UploadCloud size={32} className="dropzone-icon" />
                 </div>
-                <h4>Kéo thả hoặc Nhấp để chọn Video</h4>
-                <p>Hỗ trợ MP4, MOV, MKV, WebM</p>
+                <h4>Kéo thả hoặc Nhấp để chọn Nhiều Video</h4>
+                <p>Hỗ trợ chọn cùng lúc 1 hoặc nhiều video MP4, MOV, MKV, WebM</p>
               </div>
             </div>
           ) : (
-            <div className="video-preview-wrapper">
-              <video
-                src={videoPreviewUrl}
-                controls
-                className="preview-video-element"
-              />
-              <div className="video-file-info">
-                <FileVideo size={16} />
-                <span>{videoFile.name} ({formatFileSize(videoFile.size)})</span>
+            <div className="multi-video-wrapper">
+              {/* Active Video Preview */}
+              {currentPreviewUrl && (
+                <div className="video-preview-wrapper">
+                  <video
+                    key={currentPreviewUrl}
+                    src={currentPreviewUrl}
+                    controls
+                    className="preview-video-element"
+                  />
+                  <div className="video-file-info">
+                    <FileVideo size={16} />
+                    <span>
+                      Đang xem: <strong>Clip {selectedPreviewIndex + 1}/{videoFiles.length}</strong> - {currentPreviewFile.name} ({formatFileSize(currentPreviewFile.size)})
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Video Playlist / Ordering List */}
+              <div className="playlist-container">
+                <div className="playlist-header">
+                  <div className="playlist-title">
+                    <Layers size={16} />
+                    <span>Danh sách clip sẽ ghép nối theo thứ tự ({videoFiles.length} clips • {formatFileSize(totalFilesSize)}):</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn-add-more-video"
+                    onClick={() => addMoreInputRef.current?.click()}
+                  >
+                    <Plus size={15} /> Thêm clip
+                  </button>
+                  <input
+                    type="file"
+                    ref={addMoreInputRef}
+                    onChange={handleFileChange}
+                    accept="video/*"
+                    multiple
+                    style={{ display: 'none' }}
+                  />
+                </div>
+
+                <div className="playlist-items-list">
+                  {videoFiles.map((file, idx) => (
+                    <div
+                      key={idx}
+                      className={`playlist-item ${selectedPreviewIndex === idx ? 'active' : ''}`}
+                    >
+                      <div
+                        className="playlist-item-left"
+                        onClick={() => setSelectedPreviewIndex(idx)}
+                      >
+                        <span className="clip-number">#{idx + 1}</span>
+                        <div className="clip-info">
+                          <span className="clip-name">{file.name}</span>
+                          <span className="clip-size">{formatFileSize(file.size)}</span>
+                        </div>
+                      </div>
+
+                      <div className="playlist-item-actions">
+                        <button
+                          type="button"
+                          className="btn-order-action"
+                          onClick={() => moveVideoOrder(idx, -1)}
+                          disabled={idx === 0}
+                          title="Di chuyển lên trước"
+                        >
+                          <ArrowUp size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-order-action"
+                          onClick={() => moveVideoOrder(idx, 1)}
+                          disabled={idx === videoFiles.length - 1}
+                          title="Di chuyển xuống sau"
+                        >
+                          <ArrowDown size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-order-action delete"
+                          onClick={() => handleRemoveSingleVideo(idx)}
+                          title="Xóa clip này"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -190,7 +307,7 @@ export default function VideoDubber({ showToast }) {
           <div className="textarea-wrapper">
             <textarea
               className="tts-textarea"
-              placeholder="Nhập văn bản lời bình / thuyết minh tiếng Việt để ghép vào video..."
+              placeholder="Nhập văn bản lời bình / thuyết minh tiếng Việt xuyên suốt các video..."
               value={text}
               onChange={(e) => setText(e.target.value)}
               rows={4}
@@ -232,7 +349,7 @@ export default function VideoDubber({ showToast }) {
               />
               <div className="checkbox-label-group">
                 <VolumeX size={16} />
-                <span>Xóa âm thanh gốc của video và thay thế bằng giọng đọc Ngọc Huyền</span>
+                <span>Xóa âm thanh gốc của tất cả video và thay bằng giọng đọc Ngọc Huyền</span>
               </div>
             </label>
 
@@ -240,17 +357,25 @@ export default function VideoDubber({ showToast }) {
               type="button"
               className={`btn-synthesize ${isLoading ? 'loading' : ''}`}
               onClick={handleProcessDubbing}
-              disabled={isLoading || !videoFile || !text.trim()}
+              disabled={isLoading || videoFiles.length === 0 || !text.trim()}
             >
               {isLoading ? (
                 <>
                   <Loader2 size={20} className="spin-icon" />
-                  <span>Đang tạo giọng & ghép vào video...</span>
+                  <span>
+                    {videoFiles.length > 1
+                      ? `Đang nối ${videoFiles.length} video & lồng tiếng...`
+                      : 'Đang tạo giọng & ghép vào video...'}
+                  </span>
                 </>
               ) : (
                 <>
                   <Sparkles size={20} />
-                  <span>Ghép Giọng Đọc Vào Video (.MP4)</span>
+                  <span>
+                    {videoFiles.length > 1
+                      ? `Nối ${videoFiles.length} Video & Lồng Tiếng (.MP4)`
+                      : 'Ghép Giọng Đọc Vào Video (.MP4)'}
+                  </span>
                 </>
               )}
             </button>
@@ -265,7 +390,7 @@ export default function VideoDubber({ showToast }) {
             <div className="card-header">
               <div className="card-title-group">
                 <CheckCircle2 size={20} className="card-header-icon" style={{ color: '#10b981' }} />
-                <h2 className="card-title">Video Đã Lồng Tiếng Hoàn Tất</h2>
+                <h2 className="card-title">Video Đã Ghép Hoàn Tất</h2>
               </div>
 
               <a
@@ -290,11 +415,16 @@ export default function VideoDubber({ showToast }) {
 
             <div className="meta-tags-container">
               <span className="meta-pill">
-                <Clock size={14} /> Thời lượng thoại: {dubbedResult.duration}s
+                <Clock size={14} /> Thời lượng: {dubbedResult.duration}s
               </span>
               <span className="meta-pill">
                 Tốc độ đọc: {dubbedResult.speed}x
               </span>
+              {dubbedResult.video_count && (
+                <span className="meta-pill">
+                  Số clip đã nối: {dubbedResult.video_count}
+                </span>
+              )}
               <span className="meta-pill">
                 Định dạng: MP4 (H.264 + AAC 192k)
               </span>
@@ -307,7 +437,7 @@ export default function VideoDubber({ showToast }) {
                 <Film size={36} className="placeholder-icon" />
               </div>
               <h3>Xem trước Video kết quả</h3>
-              <p>Tải video lên, nhập lời bình và bấm "Ghép Giọng Đọc Vào Video" để xem và tải về</p>
+              <p>Tải lên 1 hoặc nhiều video, nhập lời bình và bấm tạo để xem và tải về</p>
             </div>
           </div>
         )}

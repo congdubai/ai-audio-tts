@@ -405,6 +405,13 @@ html, body, #root {
   color: var(--text-dim);
 }
 
+.multi-video-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+}
+
 .video-preview-wrapper {
   width: 100%;
   border-radius: var(--radius-md);
@@ -415,7 +422,7 @@ html, body, #root {
 
 .preview-video-element {
   width: 100%;
-  max-height: 240px;
+  max-height: 220px;
   object-fit: contain;
   display: block;
 }
@@ -425,9 +432,156 @@ html, body, #root {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.03);
+}
+
+/* Multi-Video Playlist */
+.playlist-container {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  width: 100%;
+}
+
+.playlist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.playlist-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.btn-add-more-video {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius-full);
+  color: #a5b4fc;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-add-more-video:hover {
+  background: rgba(99, 102, 241, 0.3);
+  color: white;
+}
+
+.playlist-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.playlist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid transparent;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.playlist-item:hover,
+.playlist-item.active {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.25);
+}
+
+.playlist-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.clip-number {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.clip-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.clip-name {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.clip-size {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+
+.playlist-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-order-action {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-order-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.btn-order-action:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.btn-order-action.delete:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.4);
 }
 
 .dubbed-video-container {
