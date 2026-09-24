@@ -1,15 +1,5 @@
-function getApiBaseUrl() {
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1' || !host) {
-      return 'http://127.0.0.1:8000';
-    }
-    return `http://${host}:8000`;
-  }
-  return 'http://127.0.0.1:8000';
-}
-
-const API_BASE_URL = getApiBaseUrl();
+// Using Vite Proxy to forward /api to backend (Zero CORS, Zero Cross-Origin Block)
+const API_BASE_URL = '';
 
 export async function checkHealth() {
   try {
@@ -41,8 +31,8 @@ export async function synthesizeText(text, speed = 1.0) {
   const data = await res.json();
   return {
     ...data,
-    fullAudioUrl: `${API_BASE_URL}${data.audio_url}`,
-    fullDownloadUrl: `${API_BASE_URL}${data.download_url}`,
+    fullAudioUrl: data.audio_url,
+    fullDownloadUrl: data.download_url,
   };
 }
 
@@ -52,8 +42,8 @@ export async function fetchHistory() {
   const items = await res.json();
   return items.map((item) => ({
     ...item,
-    fullAudioUrl: `${API_BASE_URL}${item.audio_url}`,
-    fullDownloadUrl: `${API_BASE_URL}${item.download_url}`,
+    fullAudioUrl: item.audio_url,
+    fullDownloadUrl: item.download_url,
   }));
 }
 
@@ -93,8 +83,8 @@ export async function dubVideo(videoFiles, text, speed = 1.0, removeOriginalAudi
   const data = await res.json();
   return {
     ...data,
-    fullVideoUrl: `${API_BASE_URL}${data.video_url}`,
-    fullDownloadUrl: `${API_BASE_URL}${data.download_url}`,
+    fullVideoUrl: data.video_url,
+    fullDownloadUrl: data.download_url,
   };
 }
 
@@ -104,8 +94,8 @@ export async function fetchVideoHistory() {
   const items = await res.json();
   return items.map((item) => ({
     ...item,
-    fullVideoUrl: `${API_BASE_URL}${item.video_url}`,
-    fullDownloadUrl: `${API_BASE_URL}${item.download_url}`,
+    fullVideoUrl: item.video_url,
+    fullDownloadUrl: item.download_url,
   }));
 }
 
