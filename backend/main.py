@@ -48,7 +48,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -186,8 +186,10 @@ async def dub_multiple_videos(
         if not videos or len(videos) == 0:
             raise HTTPException(status_code=400, detail="Vui lòng tải lên ít nhất 1 video.")
 
+        print(f"[*] Nhan yeu cau long tieng: {len(videos)} file video, che do: {duration_mode}...")
         # Save all uploaded videos to temporary files
         for idx, video in enumerate(videos):
+            print(f"[*] Dang luu file video tam {idx+1}/{len(videos)}: {video.filename}...")
             temp_filename = f"upload_{idx}_{uuid.uuid4()}_{video.filename}"
             temp_path = VIDEO_UPLOADS_DIR / temp_filename
             with open(temp_path, "wb") as buffer:

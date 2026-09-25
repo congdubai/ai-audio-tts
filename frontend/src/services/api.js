@@ -1,12 +1,40 @@
-// Using Vite Proxy to forward /api to backend (Zero CORS, Zero Cross-Origin Block)
-const API_BASE_URL = '';
+// Tự động nhận diện host theo trình duyệt (localhost hoặc 127.0.0.1)
+const getInitialBaseUrl = () => {
+  if (typeof window !== 'undefined' && window.location.hostname === '127.0.0.1') {
+    return 'http://127.0.0.1:8000';
+  }
+  return 'http://localhost:8000';
+};
+
+export let API_BASE_URL = getInitialBaseUrl();
+
+const getFullUrl = (path) => {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+};
 
 export async function checkHealth() {
+  // Thử kết nối URL chính
   try {
     const res = await fetch(`${API_BASE_URL}/api/health`);
-    if (!res.ok) throw new Error('Không thể kết nối đến server backend');
-    return await res.json();
+    if (res.ok) {
+      return await res.json();
+    }
   } catch (error) {
+    // Nếu localhost không được, thử fallback sang 127.0.0.1 hoặc ngược lại
+    const fallbackUrl = API_BASE_URL.includes('localhost')
+      ? 'http://127.0.0.1:8000'
+      : 'http://localhost:8000';
+    try {
+      const fallbackRes = await fetch(`${fallbackUrl}/api/health`);
+      if (fallbackRes.ok) {
+        API_BASE_URL = fallbackUrl;
+        return await fallbackRes.json();
+      }
+    } catch {
+      // Cả 2 đều chưa kết nối được
+    }
     console.error('Health check error:', error);
     return { status: 'offline', error: error.message };
   }
@@ -31,8 +59,8 @@ export async function synthesizeText(text, speed = 1.0) {
   const data = await res.json();
   return {
     ...data,
-    fullAudioUrl: data.audio_url,
-    fullDownloadUrl: data.download_url,
+    fullAudioUrl: getFullUrl(data.audio_url),
+    fullDownloadUrl: getFullUrl(data.download_url),
   };
 }
 
@@ -42,8 +70,8 @@ export async function fetchHistory() {
   const items = await res.json();
   return items.map((item) => ({
     ...item,
-    fullAudioUrl: item.audio_url,
-    fullDownloadUrl: item.download_url,
+    fullAudioUrl: getFullUrl(item.audio_url),
+    fullDownloadUrl: getFullUrl(item.download_url),
   }));
 }
 
@@ -83,8 +111,8 @@ export async function dubVideo(videoFiles, text, speed = 1.0, removeOriginalAudi
   const data = await res.json();
   return {
     ...data,
-    fullVideoUrl: data.video_url,
-    fullDownloadUrl: data.download_url,
+    fullVideoUrl: getFullUrl(data.video_url),
+    fullDownloadUrl: getFullUrl(data.download_url),
   };
 }
 
@@ -94,8 +122,8 @@ export async function fetchVideoHistory() {
   const items = await res.json();
   return items.map((item) => ({
     ...item,
-    fullVideoUrl: item.video_url,
-    fullDownloadUrl: item.download_url,
+    fullVideoUrl: getFullUrl(item.video_url),
+    fullDownloadUrl: getFullUrl(item.download_url),
   }));
 }
 

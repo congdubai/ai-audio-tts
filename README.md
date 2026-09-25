@@ -17,7 +17,7 @@
 
 Chỉ cần nhấp đúp chuột vào file **`start_app.bat`** tại thư mục gốc của dự án:
 - **Frontend**: http://localhost:5173
-- **Backend API**: http://127.0.0.1:8000/docs
+- **Backend API**: http://localhost:8000/docs
 
 ---
 
@@ -33,7 +33,7 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install torch --extra-index-url https://download.pytorch.org/whl/cu121
 # Chạy backend:
-uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+uvicorn main:app --host localhost --port 8000 --reload
 ```
 
 ### 2. Cài đặt Frontend (React)

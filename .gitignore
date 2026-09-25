@@ -14,9 +14,13 @@ dist-ssr/
 *.local
 
 # Outputs and DB
-backend/outputs/*.wav
+backend/outputs/
+backend/video_outputs/
+backend/video_uploads/
 backend/*.db
 outputs/
+*.wav
+*.mp4
 
 # Large Model weights (can be cloned from HuggingFace dinhthuan/kokoro-vi-ngoc-huyen)
 # *.pth
