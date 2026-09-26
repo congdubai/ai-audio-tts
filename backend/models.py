@@ -2,8 +2,8 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 
 class SynthesizeRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=5000, description="Văn bản tiếng Việt cần chuyển đổi")
-    speed: float = Field(1.0, ge=0.5, le=2.0, description="Tốc độ giọng đọc (0.5 đến 2.0)")
+    text: str = Field(..., min_length=1, max_length=100000, description="Văn bản tiếng Việt cần chuyển đổi")
+    speed: Optional[float] = Field(1.0, ge=0.1, le=5.0, description="Tốc độ giọng đọc (0.1 đến 5.0)")
 
 class SynthesizeResponse(BaseModel):
     id: str

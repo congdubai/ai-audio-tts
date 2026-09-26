@@ -16,7 +16,7 @@ import {
   ArrowDown,
   Layers,
 } from 'lucide-react';
-import { dubVideo, fetchVideoHistory, deleteVideoHistoryItem } from '../services/api';
+import { dubVideo } from '../services/api';
 
 const VIDEO_SAMPLE_SCRIPTS = [
   'Đoạn video này ghi lại khoảnh khắc thiên nhiên tuyệt đẹp trong một buổi chiều hoàng hôn rực rỡ.',
@@ -33,24 +33,9 @@ export default function VideoDubber({ showToast }) {
   const [durationMode, setDurationMode] = useState('full_video'); // 'full_video' | 'match_voice' | 'loop_voice'
   const [isLoading, setIsLoading] = useState(false);
   const [dubbedResult, setDubbedResult] = useState(null);
-  const [videoHistory, setVideoHistory] = useState([]);
 
   const fileInputRef = useRef(null);
   const addMoreInputRef = useRef(null);
-
-  // Load video history on mount
-  React.useEffect(() => {
-    loadHistory();
-  }, []);
-
-  const loadHistory = async () => {
-    try {
-      const items = await fetchVideoHistory();
-      setVideoHistory(items);
-    } catch (e) {
-      console.error('Failed to load video history:', e);
-    }
-  };
 
   const isVideoFile = (f) => {
     if (f.type && f.type.startsWith('video/')) return true;
@@ -133,25 +118,11 @@ export default function VideoDubber({ showToast }) {
       const result = await dubVideo(videoFiles, text, speed, removeOriginalAudio, durationMode);
       setDubbedResult(result);
       showToast(`Đã nối & lồng tiếng thành công ${videoFiles.length} video!`, 'success');
-      loadHistory();
     } catch (error) {
       console.error('Dubbing error:', error);
       showToast(error.message || 'Lỗi khi xử lý lồng tiếng video', 'error');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleDeleteVideo = async (id) => {
-    try {
-      await deleteVideoHistoryItem(id);
-      showToast('Đã xóa video trong lịch sử', 'success');
-      if (dubbedResult?.id === id) {
-        setDubbedResult(null);
-      }
-      loadHistory();
-    } catch (e) {
-      showToast('Lỗi khi xóa video: ' + e.message, 'error');
     }
   };
 
@@ -505,62 +476,6 @@ export default function VideoDubber({ showToast }) {
             </div>
           </div>
         )}
-
-        {/* Video Dubbing History */}
-        <div className="card history-card">
-          <div className="card-header">
-            <div className="card-title-group">
-              <Film size={20} className="card-header-icon" />
-              <h2 className="card-title">Video Đã Ghép Gần Đây ({videoHistory.length})</h2>
-            </div>
-          </div>
-
-          {videoHistory.length === 0 ? (
-            <div className="empty-sub" style={{ textAlign: 'center', padding: '16px' }}>
-              Chưa có video lồng tiếng nào được lưu
-            </div>
-          ) : (
-            <div className="history-items-list">
-              {videoHistory.map((item) => (
-                <div key={item.id} className="history-item">
-                  <div className="history-item-left" onClick={() => setDubbedResult(item)}>
-                    <div className="history-text" title={item.text}>
-                      "{item.text}"
-                    </div>
-                    <div className="history-metadata">
-                      <span className="history-meta-tag">
-                        <Clock size={12} /> {item.duration}s
-                      </span>
-                      <span className="history-meta-tag">
-                        {formatFileSize(item.file_size)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="history-item-actions">
-                    <a
-                      href={item.fullDownloadUrl}
-                      download={`dubbed_ngoc_huyen_${item.id}.mp4`}
-                      className="btn-history-action download"
-                      title="Tải video này"
-                    >
-                      <Download size={16} />
-                    </a>
-
-                    <button
-                      type="button"
-                      className="btn-history-action delete"
-                      onClick={() => handleDeleteVideo(item.id)}
-                      title="Xóa video"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </section>
     </div>
   );

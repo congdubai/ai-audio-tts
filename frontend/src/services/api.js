@@ -43,17 +43,26 @@ export async function checkHealth() {
 // ==================== TTS APIs ====================
 
 export async function synthesizeText(text, speed = 1.0) {
+  const cleanText = String(text || '').trim();
+  const numSpeed = typeof speed === 'number' ? speed : parseFloat(speed) || 1.0;
+
   const res = await fetch(`${API_BASE_URL}/api/tts/synthesize`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ text, speed }),
+    body: JSON.stringify({ text: cleanText, speed: numSpeed }),
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ detail: 'Lỗi không xác định khi tạo giọng nói' }));
-    throw new Error(errorData.detail || 'Lỗi server');
+    let errorMsg = 'Lỗi server';
+    if (typeof errorData.detail === 'string') {
+      errorMsg = errorData.detail;
+    } else if (Array.isArray(errorData.detail)) {
+      errorMsg = errorData.detail.map((e) => `${e.loc?.slice(1).join('.') || 'Trường'}: ${e.msg}`).join(', ');
+    }
+    throw new Error(errorMsg);
   }
 
   const data = await res.json();

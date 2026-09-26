@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import TextEditor from './components/TextEditor';
 import AudioPlayer from './components/AudioPlayer';
-import HistoryList from './components/HistoryList';
 import VideoDubber from './components/VideoDubber';
-import { checkHealth, synthesizeText, fetchHistory, deleteHistoryItem } from './services/api';
+import { checkHealth, synthesizeText } from './services/api';
 import { AlertCircle, CheckCircle, Sparkles, Volume2, Film } from 'lucide-react';
 
 export default function App() {
@@ -14,13 +13,11 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [serverStatus, setServerStatus] = useState(null);
   const [currentAudio, setCurrentAudio] = useState(null);
-  const [history, setHistory] = useState([]);
   const [notification, setNotification] = useState(null);
 
-  // Poll server health & initial history
+  // Poll server health
   useEffect(() => {
     loadHealth();
-    loadHistory();
 
     const interval = setInterval(loadHealth, 10000);
     return () => clearInterval(interval);
@@ -36,18 +33,6 @@ export default function App() {
     setServerStatus(status);
   };
 
-  const loadHistory = async () => {
-    try {
-      const items = await fetchHistory();
-      setHistory(items);
-      if (items.length > 0 && !currentAudio) {
-        setCurrentAudio(items[0]);
-      }
-    } catch (e) {
-      console.error('History load error:', e);
-    }
-  };
-
   const handleSynthesize = async () => {
     if (!text.trim()) {
       showToast('Vui lòng nhập văn bản tiếng Việt!', 'error');
@@ -59,25 +44,11 @@ export default function App() {
       const result = await synthesizeText(text, speed);
       setCurrentAudio(result);
       showToast('Tạo giọng nói thành công!', 'success');
-      loadHistory();
     } catch (error) {
       console.error('Synthesis error:', error);
       showToast(error.message || 'Lỗi khi tạo giọng nói', 'error');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleDeleteHistory = async (id) => {
-    try {
-      await deleteHistoryItem(id);
-      showToast('Đã xóa bản ghi thành công', 'success');
-      if (currentAudio?.id === id) {
-        setCurrentAudio(null);
-      }
-      loadHistory();
-    } catch (e) {
-      showToast('Lỗi khi xóa: ' + e.message, 'error');
     }
   };
 
@@ -140,7 +111,7 @@ export default function App() {
               />
             </section>
 
-            {/* Right Column: Audio Player & History */}
+            {/* Right Column: Audio Player */}
             <section className="column-right">
               {currentAudio ? (
                 <AudioPlayer audioData={currentAudio} />
@@ -155,12 +126,6 @@ export default function App() {
                   </div>
                 </div>
               )}
-
-              <HistoryList
-                history={history}
-                onSelectAudio={(item) => setCurrentAudio(item)}
-                onDeleteAudio={handleDeleteHistory}
-              />
             </section>
           </main>
         )}

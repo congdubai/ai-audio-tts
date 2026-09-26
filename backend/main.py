@@ -10,17 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from tts_service import TTSEngine, OUTPUTS_DIR
 from video_service import VideoDubbingService, VIDEO_OUTPUTS_DIR, VIDEO_UPLOADS_DIR
-from db import (
-    init_db,
-    add_history_entry,
-    get_history,
-    get_history_by_id,
-    delete_history_entry,
-    add_video_history_entry,
-    get_video_history,
-    get_video_history_by_id,
-    delete_video_history_entry
-)
+from db import init_db
 from models import SynthesizeRequest, SynthesizeResponse, HistoryItem
 
 @asynccontextmanager
@@ -53,6 +43,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.exceptions import RequestValidationError
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc):
+    print(f"[!] Validation error (422) on {request.method} {request.url.path}: {exc.errors()}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"detail": exc.errors()}
+    )
+
 @app.get("/api/health")
 async def health_check():
     engine = TTSEngine.get_instance()
@@ -71,17 +71,6 @@ async def synthesize_speech(req: SynthesizeRequest):
     try:
         engine = TTSEngine.get_instance()
         result = engine.synthesize(text=req.text, speed=req.speed)
-
-        # Save record to history database
-        add_history_entry(
-            item_id=result["id"],
-            text=result["text"],
-            speed=result["speed"],
-            duration=result["duration"],
-            phonemes=result["phonemes"],
-            filename=result["filename"],
-            file_size=result["file_size"]
-        )
 
         return SynthesizeResponse(
             id=result["id"],
@@ -104,8 +93,7 @@ async def synthesize_speech(req: SynthesizeRequest):
 
 @app.get("/api/tts/audio/{audio_id}")
 async def stream_audio(audio_id: str):
-    record = get_history_by_id(audio_id)
-    filename = record["filename"] if record else f"{audio_id}.wav"
+    filename = f"{audio_id}.wav"
     file_path = OUTPUTS_DIR / filename
 
     if not file_path.exists():
@@ -119,8 +107,7 @@ async def stream_audio(audio_id: str):
 
 @app.get("/api/tts/download/{audio_id}")
 async def download_audio(audio_id: str):
-    record = get_history_by_id(audio_id)
-    filename = record["filename"] if record else f"{audio_id}.wav"
+    filename = f"{audio_id}.wav"
     file_path = OUTPUTS_DIR / filename
 
     if not file_path.exists():
@@ -135,37 +122,17 @@ async def download_audio(audio_id: str):
 
 @app.get("/api/tts/history", response_model=list[HistoryItem])
 async def list_history():
-    records = get_history(limit=50)
-    history = []
-    for r in records:
-        history.append(HistoryItem(
-            id=r["id"],
-            text=r["text"],
-            speed=r["speed"],
-            duration=r["duration"],
-            phonemes=r["phonemes"],
-            filename=r["filename"],
-            file_size=r["file_size"],
-            created_at=r["created_at"],
-            audio_url=f"/api/tts/audio/{r['id']}",
-            download_url=f"/api/tts/download/{r['id']}"
-        ))
-    return history
+    return []
 
 @app.delete("/api/tts/history/{audio_id}")
 async def delete_history(audio_id: str):
-    record = get_history_by_id(audio_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Bản ghi không tồn tại.")
-    
-    file_path = OUTPUTS_DIR / record["filename"]
+    file_path = OUTPUTS_DIR / f"{audio_id}.wav"
     if file_path.exists():
         try:
             os.remove(file_path)
         except Exception:
             pass
 
-    delete_history_entry(audio_id)
     return {"status": "success", "message": "Đã xóa bản ghi thành công."}
 
 # ==================== Multi-Video Dubbing Endpoints ====================
@@ -213,16 +180,6 @@ async def dub_multiple_videos(
                 except Exception:
                     pass
 
-        # Save to video history
-        add_video_history_entry(
-            item_id=result["id"],
-            text=result["text"],
-            speed=result["speed"],
-            duration=result["audio_duration"],
-            filename=result["filename"],
-            file_size=result["file_size"]
-        )
-
         return {
             "id": result["id"],
             "text": result["text"],
@@ -248,8 +205,7 @@ async def dub_multiple_videos(
 
 @app.get("/api/video/stream/{video_id}")
 async def stream_video(video_id: str):
-    record = get_video_history_by_id(video_id)
-    filename = record["filename"] if record else f"dubbed_{video_id}.mp4"
+    filename = f"dubbed_{video_id}.mp4"
     file_path = VIDEO_OUTPUTS_DIR / filename
 
     if not file_path.exists():
@@ -263,8 +219,7 @@ async def stream_video(video_id: str):
 
 @app.get("/api/video/download/{video_id}")
 async def download_video(video_id: str):
-    record = get_video_history_by_id(video_id)
-    filename = record["filename"] if record else f"dubbed_{video_id}.mp4"
+    filename = f"dubbed_{video_id}.mp4"
     file_path = VIDEO_OUTPUTS_DIR / filename
 
     if not file_path.exists():
@@ -279,36 +234,17 @@ async def download_video(video_id: str):
 
 @app.get("/api/video/history")
 async def list_video_history():
-    records = get_video_history(limit=50)
-    history = []
-    for r in records:
-        history.append({
-            "id": r["id"],
-            "text": r["text"],
-            "speed": r["speed"],
-            "duration": r["duration"],
-            "filename": r["filename"],
-            "file_size": r["file_size"],
-            "created_at": r["created_at"],
-            "video_url": f"/api/video/stream/{r['id']}",
-            "download_url": f"/api/video/download/{r['id']}"
-        })
-    return history
+    return []
 
 @app.delete("/api/video/history/{video_id}")
 async def delete_video_history(video_id: str):
-    record = get_video_history_by_id(video_id)
-    if not record:
-        raise HTTPException(status_code=404, detail="Bản ghi video không tồn tại.")
-    
-    file_path = VIDEO_OUTPUTS_DIR / record["filename"]
+    file_path = VIDEO_OUTPUTS_DIR / f"dubbed_{video_id}.mp4"
     if file_path.exists():
         try:
             os.remove(file_path)
         except Exception:
             pass
 
-    delete_video_history_entry(video_id)
     return {"status": "success", "message": "Đã xóa video thành công."}
 
 if __name__ == "__main__":
