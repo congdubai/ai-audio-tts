@@ -154,14 +154,15 @@ export async function deleteHistoryItem(id) {
 
 // ==================== Multi-Video Processing APIs ====================
 
-export async function dubVideo(
+export async function dubVideoStream(
   videoFiles,
   audioFiles = [],
   audioIds = [],
   bgmFile = null,
   bgmVolume = 0.2,
   removeOriginalAudio = true,
-  durationMode = 'full_video'
+  durationMode = 'full_video',
+  onProgress = null
 ) {
   const formData = new FormData();
 
@@ -195,7 +196,7 @@ export async function dubVideo(
   formData.append('remove_original_audio', removeOriginalAudio ? 'true' : 'false');
   formData.append('duration_mode', durationMode);
 
-  const res = await fetch(`${API_BASE_URL}/api/video/dub`, {
+  const res = await fetch(`${API_BASE_URL}/api/video/dub-stream`, {
     method: 'POST',
     body: formData,
   });
@@ -205,12 +206,70 @@ export async function dubVideo(
     throw new Error(errorData.detail || 'Lỗi server');
   }
 
-  const data = await res.json();
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let finalResult = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('data: ')) {
+        const jsonStr = trimmed.slice(6);
+        try {
+          const payload = JSON.parse(jsonStr);
+          if (payload.type === 'progress' && onProgress) {
+            onProgress(payload);
+          } else if (payload.type === 'complete') {
+            finalResult = payload.result;
+          } else if (payload.type === 'error') {
+            throw new Error(payload.message || 'Lỗi khi xử lý video');
+          }
+        } catch (e) {
+          if (e.message.includes('xử lý video')) throw e;
+          console.warn('Stream JSON parse error:', e);
+        }
+      }
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error('Không nhận được dữ liệu hoàn chỉnh từ server');
+  }
+
   return {
-    ...data,
-    fullVideoUrl: getFullUrl(data.video_url),
-    fullDownloadUrl: getFullUrl(data.download_url),
+    ...finalResult,
+    fullVideoUrl: getFullUrl(finalResult.video_url),
+    fullDownloadUrl: getFullUrl(finalResult.download_url),
   };
+}
+
+export async function dubVideo(
+  videoFiles,
+  audioFiles = [],
+  audioIds = [],
+  bgmFile = null,
+  bgmVolume = 0.2,
+  removeOriginalAudio = true,
+  durationMode = 'full_video'
+) {
+  return dubVideoStream(
+    videoFiles,
+    audioFiles,
+    audioIds,
+    bgmFile,
+    bgmVolume,
+    removeOriginalAudio,
+    durationMode,
+    null
+  );
 }
 
 export async function fetchVideoHistory() {

@@ -21,7 +21,7 @@ import {
   Disc,
   Gauge
 } from 'lucide-react';
-import { dubVideo, fetchHistory } from '../services/api';
+import { dubVideoStream, fetchHistory } from '../services/api';
 
 export default function VideoDubber({ showToast, currentAudio }) {
   // Video States
@@ -43,8 +43,9 @@ export default function VideoDubber({ showToast, currentAudio }) {
   const [removeOriginalAudio, setRemoveOriginalAudio] = useState(true);
   const [durationMode, setDurationMode] = useState('full_video'); // 'full_video' | 'match_voice' | 'loop_voice'
 
-  // App Execution States
+  // Progress & Execution States
   const [isLoading, setIsLoading] = useState(false);
+  const [progress, setProgress] = useState(null);
   const [dubbedResult, setDubbedResult] = useState(null);
 
   // Refs
@@ -240,7 +241,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
     if (bgmFileInputRef.current) bgmFileInputRef.current.value = '';
   };
 
-  // Main Processing Submit
+  // Main Processing Submit (Streaming Progress)
   const handleProcessVideo = async () => {
     if (videoFiles.length === 0) {
       showToast('Vui lòng tải lên ít nhất 1 video!', 'error');
@@ -261,15 +262,20 @@ export default function VideoDubber({ showToast, currentAudio }) {
     }
 
     setIsLoading(true);
+    setProgress({ percent: 5, message: 'Đang khởi tạo các file tải lên...' });
+
     try {
-      const result = await dubVideo(
+      const result = await dubVideoStream(
         videoFiles,
         audioFilesToSend,
         audioIdsToSend,
         bgmFile,
         bgmVolume,
         removeOriginalAudio,
-        durationMode
+        durationMode,
+        (progData) => {
+          setProgress(progData);
+        }
       );
       setDubbedResult(result);
 
@@ -289,6 +295,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
       showToast(error.message || 'Lỗi khi xử lý video', 'error');
     } finally {
       setIsLoading(false);
+      setProgress(null);
     }
   };
 
@@ -774,35 +781,48 @@ export default function VideoDubber({ showToast, currentAudio }) {
               </div>
             </label>
 
-            <button
-              type="button"
-              className={`btn-synthesize ${isLoading ? 'loading' : ''}`}
-              onClick={handleProcessVideo}
-              disabled={isLoading || videoFiles.length === 0}
-              style={{ marginTop: '20px' }}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 size={20} className="spin-icon" />
-                  <span>Đang nối {voicePlaylist.length} giọng & hòa âm vào Video bằng FFmpeg...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles size={20} />
-                  <span>
-                    {voicePlaylist.length > 0 && bgmFile
-                      ? `✨ Nối ${voicePlaylist.length} Giọng Đọc + Nhạc Nền + Video (.MP4)`
-                      : voicePlaylist.length > 0
-                      ? `✨ Nối ${voicePlaylist.length} Giọng Đọc + Video (.MP4)`
-                      : bgmFile
-                      ? `✨ Ghép Video + Nhạc Nền (.MP4)`
-                      : removeOriginalAudio
-                      ? `✂️ Xóa Âm Thanh Gốc Video (.MP4)`
-                      : `🎬 Nối Các Clip Video (.MP4)`}
-                  </span>
-                </>
-              )}
-            </button>
+            {/* Dynamic Real-time Progress Bar or Action Button */}
+            {isLoading ? (
+              <div className="progress-status-container" style={{ marginTop: '20px' }}>
+                <div className="progress-status-header">
+                  <div className="progress-status-title">
+                    <Loader2 size={18} className="spin-icon" />
+                    <span>{progress?.message || 'Đang xử lý video bằng FFmpeg...'}</span>
+                  </div>
+                  <span className="progress-percent-badge">{progress?.percent || 0}%</span>
+                </div>
+
+                <div className="progress-bar-track">
+                  <div
+                    className="progress-bar-fill"
+                    style={{ width: `${Math.max(5, progress?.percent || 0)}%` }}
+                  >
+                    <div className="progress-shimmer" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn-synthesize"
+                onClick={handleProcessVideo}
+                disabled={videoFiles.length === 0}
+                style={{ marginTop: '20px' }}
+              >
+                <Sparkles size={20} />
+                <span>
+                  {voicePlaylist.length > 0 && bgmFile
+                    ? `✨ Nối ${voicePlaylist.length} Giọng Đọc + Nhạc Nền + Video (.MP4)`
+                    : voicePlaylist.length > 0
+                    ? `✨ Nối ${voicePlaylist.length} Giọng Đọc + Video (.MP4)`
+                    : bgmFile
+                    ? `✨ Ghép Video + Nhạc Nền (.MP4)`
+                    : removeOriginalAudio
+                    ? `✂️ Xóa Âm Thanh Gốc Video (.MP4)`
+                    : `🎬 Nối Các Clip Video (.MP4)`}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </section>
