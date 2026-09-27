@@ -158,6 +158,8 @@ export async function dubVideo(
   videoFiles,
   audioFile = null,
   audioId = null,
+  bgmFile = null,
+  bgmVolume = 0.2,
   removeOriginalAudio = true,
   durationMode = 'full_video'
 ) {
@@ -172,6 +174,11 @@ export async function dubVideo(
     formData.append('audio_file', audioFile);
   } else if (audioId) {
     formData.append('audio_id', audioId);
+  }
+
+  if (bgmFile) {
+    formData.append('bgm_file', bgmFile);
+    formData.append('bgm_volume', bgmVolume.toString());
   }
 
   formData.append('remove_original_audio', removeOriginalAudio ? 'true' : 'false');

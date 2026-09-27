@@ -42,6 +42,8 @@ class VideoDubbingService:
         cls,
         video_paths: List[Path],
         audio_file_path: Optional[Path] = None,
+        bgm_file_path: Optional[Path] = None,
+        bgm_volume: float = 0.2,
         remove_original_audio: bool = True,
         duration_mode: str = "full_video"  # "full_video" | "match_voice" | "loop_voice"
     ) -> Dict[str, Any]:
@@ -53,215 +55,122 @@ class VideoDubbingService:
         output_filepath = VIDEO_OUTPUTS_DIR / output_filename
         ffmpeg_bin = cls.get_ffmpeg_bin()
 
-        has_audio = audio_file_path is not None and audio_file_path.exists()
-        voice_dur = cls.get_video_duration(audio_file_path) if has_audio else 0.0
+        has_voice = audio_file_path is not None and audio_file_path.exists()
+        has_bgm = bgm_file_path is not None and bgm_file_path.exists()
 
-        print(f"[*] Bat dau xu ly video ({len(video_paths)} clip). Audio: {'Co (' + str(voice_dur) + 's)' if has_audio else 'Khong'}, Xoa am goc: {remove_original_audio}, Mode: {duration_mode}")
+        voice_dur = cls.get_video_duration(audio_file_path) if has_voice else 0.0
+        bgm_dur = cls.get_video_duration(bgm_file_path) if has_bgm else 0.0
 
-        # SINGLE VIDEO CASE
-        if len(video_paths) == 1:
-            video_path = video_paths[0]
-            video_dur = cls.get_video_duration(video_path)
+        print(f"[*] Processing Video ({len(video_paths)} clips). Voice: {'Yes (' + str(voice_dur) + 's)' if has_voice else 'No'}, BGM: {'Yes (' + str(bgm_dur) + 's, vol=' + str(bgm_volume) + ')' if has_bgm else 'No'}, Mute orig: {remove_original_audio}, Mode: {duration_mode}")
 
-            if not has_audio:
-                # Scenario A: No new audio provided
-                if remove_original_audio:
-                    print("[*] Stream copy: Xoa am thanh goc khoi video...")
-                    cmd = [
-                        ffmpeg_bin, "-y",
-                        "-threads", "0",
-                        "-i", str(video_path),
-                        "-map", "0:v:0",
-                        "-an",
-                        "-c:v", "copy",
-                        str(output_filepath)
-                    ]
-                    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    if result.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
-                        cmd_fallback = [
-                            ffmpeg_bin, "-y",
-                            "-threads", "0",
-                            "-i", str(video_path),
-                            "-an",
-                            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-                            str(output_filepath)
-                        ]
-                        subprocess.run(cmd_fallback, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-                else:
-                    print("[*] Stream copy video (giu nguyen am goc)...")
-                    cmd = [
-                        ffmpeg_bin, "-y",
-                        "-threads", "0",
-                        "-i", str(video_path),
-                        "-c", "copy",
-                        str(output_filepath)
-                    ]
-                    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    if result.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
-                        cmd_fallback = [
-                            ffmpeg_bin, "-y",
-                            "-threads", "0",
-                            "-i", str(video_path),
-                            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-                            "-c:a", "aac", "-b:a", "192k",
-                            str(output_filepath)
-                        ]
-                        subprocess.run(cmd_fallback, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        num_vids = len(video_paths)
+        inputs = []
+        for vp in video_paths:
+            inputs.extend(["-i", str(vp)])
 
-            else:
-                # Scenario B: New audio provided
-                if remove_original_audio:
-                    if duration_mode == "match_voice":
-                        target_dur = voice_dur if voice_dur > 0 else (video_dur or 10)
-                        cmd = [
-                            ffmpeg_bin, "-y",
-                            "-threads", "0",
-                            "-ss", "0",
-                            "-t", str(target_dur),
-                            "-i", str(video_path),
-                            "-i", str(audio_file_path),
-                            "-map", "0:v:0",
-                            "-map", "1:a:0",
-                            "-c:v", "copy",
-                            "-c:a", "aac", "-b:a", "192k",
-                            str(output_filepath)
-                        ]
-                    elif duration_mode == "loop_voice":
-                        cmd = [
-                            ffmpeg_bin, "-y",
-                            "-threads", "0",
-                            "-i", str(video_path),
-                            "-stream_loop", "-1",
-                            "-i", str(audio_file_path),
-                            *(["-t", str(video_dur)] if video_dur > 0 else []),
-                            "-map", "0:v:0",
-                            "-map", "1:a:0",
-                            "-c:v", "copy",
-                            "-c:a", "aac", "-b:a", "192k",
-                            str(output_filepath)
-                        ]
-                    else: # full_video
-                        cmd = [
-                            ffmpeg_bin, "-y",
-                            "-threads", "0",
-                            "-i", str(video_path),
-                            "-i", str(audio_file_path),
-                            *(["-t", str(video_dur)] if video_dur > 0 else []),
-                            "-map", "0:v:0",
-                            "-map", "1:a:0",
-                            "-c:v", "copy",
-                            "-c:a", "aac", "-b:a", "192k",
-                            str(output_filepath)
-                        ]
+        voice_idx = None
+        if has_voice:
+            voice_idx = len(inputs) // 2
+            inputs.extend(["-i", str(audio_file_path)])
 
-                    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    if result.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
-                        time_arg = ["-t", str(video_dur)] if (video_dur > 0 and duration_mode == "full_video") else (["-t", str(voice_dur)] if duration_mode == "match_voice" else [])
-                        cmd_fallback = [
-                            ffmpeg_bin, "-y",
-                            "-threads", "0",
-                            "-i", str(video_path),
-                            "-i", str(audio_file_path),
-                            *time_arg,
-                            "-map", "0:v:0",
-                            "-map", "1:a:0",
-                            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-                            "-c:a", "aac", "-b:a", "192k",
-                            str(output_filepath)
-                        ]
-                        subprocess.run(cmd_fallback, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        bgm_idx = None
+        if has_bgm:
+            bgm_idx = len(inputs) // 2
+            inputs.extend(["-i", str(bgm_file_path)])
 
-                else:
-                    # Keep original audio & mix with new audio
-                    print("[*] Tron am thanh goc video voi audio moi (amix)...")
-                    cmd_mix = [
-                        ffmpeg_bin, "-y",
-                        "-threads", "0",
-                        "-i", str(video_path),
-                        "-i", str(audio_file_path),
-                        "-filter_complex", "[0:a:0][1:a:0]amix=inputs=2:duration=first[aout]",
-                        "-map", "0:v:0",
-                        "-map", "[aout]",
-                        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-                        "-c:a", "aac", "-b:a", "192k",
-                        *(["-t", str(video_dur)] if video_dur > 0 else []),
-                        str(output_filepath)
-                    ]
-                    subprocess.run(cmd_mix, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        filter_parts = []
 
-        # MULTI-VIDEO CONCATENATION CASE
+        # Video Filter Concat / Scale
+        if num_vids == 1:
+            # Single video
+            video_dur = cls.get_video_duration(video_paths[0])
+            filter_parts.append("[0:v:0]null[vout];")
         else:
-            num_vids = len(video_paths)
-            print(f"[*] Dang ghep noi {num_vids} video...")
-            inputs = []
-            filter_parts = []
-
-            for idx, vp in enumerate(video_paths):
-                inputs.extend(["-i", str(vp)])
+            # Multi video concat
+            video_dur = sum(cls.get_video_duration(vp) for vp in video_paths)
+            for idx in range(num_vids):
                 filter_parts.append(
                     f"[{idx}:v:0]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-ih)/2:(oh-ih)/2,setsar=1,fps=30[v{idx}];"
                 )
-
             concat_v = "".join([f"[v{i}]" for i in range(num_vids)])
+            filter_parts.append(f"{concat_v}concat=n={num_vids}:v=1:a=0[vout];")
 
-            if not has_audio:
-                filter_parts.append(f"{concat_v}concat=n={num_vids}:v=1:a=0[vout]")
-                full_filter = "".join(filter_parts)
+        # Determine target duration
+        if duration_mode == "match_voice" and has_voice and voice_dur > 0:
+            target_dur = voice_dur
+        else:
+            target_dur = video_dur
 
-                cmd_complex = [
-                    ffmpeg_bin, "-y",
-                    "-threads", "0",
-                    *inputs,
-                    "-filter_complex", full_filter,
-                    "-map", "[vout]",
-                    "-an",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-                    str(output_filepath)
-                ]
-                subprocess.run(cmd_complex, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        # Audio Stream Filters
+        audio_mix_streams = []
 
+        if has_voice:
+            if duration_mode == "loop_voice":
+                filter_parts.append(f"[{voice_idx}:a:0]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
             else:
-                filter_parts.append(f"{concat_v}concat=n={num_vids}:v=1:a=0[vout];")
+                filter_parts.append(f"[{voice_idx}:a:0]volume=1.0,apad[a_voice];")
+            audio_mix_streams.append("[a_voice]")
 
-                if duration_mode == "loop_voice":
-                    filter_parts.append(f"[{num_vids}:a:0]aloop=loop=-1:size=2147483647[aout]")
-                elif duration_mode == "match_voice":
-                    filter_parts.append(f"[{num_vids}:a:0]anull[aout]")
-                else:
-                    filter_parts.append(f"[{num_vids}:a:0]apad[aout]")
+        if has_bgm:
+            filter_parts.append(f"[{bgm_idx}:a:0]volume={bgm_volume:.2f},aloop=loop=-1:size=2147483647,apad[a_bgm];")
+            audio_mix_streams.append("[a_bgm]")
 
-                full_filter = "".join(filter_parts)
+        if not remove_original_audio:
+            if num_vids == 1:
+                filter_parts.append("[0:a:0]volume=1.0[a_orig];")
+            else:
+                concat_a = "".join([f"[{i}:a:0]" for i in range(num_vids)])
+                filter_parts.append(f"{concat_a}concat=n={num_vids}:v=0:a=1[a_orig];")
+            audio_mix_streams.append("[a_orig]")
 
-                cmd_complex = [
-                    ffmpeg_bin, "-y",
-                    "-threads", "0",
-                    *inputs,
-                    "-i", str(audio_file_path),
-                    "-filter_complex", full_filter,
-                    "-map", "[vout]",
-                    "-map", "[aout]",
-                    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-b:a", "192k",
-                    "-shortest",
-                    str(output_filepath)
-                ]
-                subprocess.run(cmd_complex, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        # Combine audio streams
+        if len(audio_mix_streams) >= 2:
+            streams_str = "".join(audio_mix_streams)
+            filter_parts.append(f"{streams_str}amix=inputs={len(audio_mix_streams)}:duration=first:normalize=0[aout]")
+            has_final_audio = True
+        elif len(audio_mix_streams) == 1:
+            filter_parts.append(f"{audio_mix_streams[0]}anull[aout]")
+            has_final_audio = True
+        else:
+            has_final_audio = False
 
-        if not output_filepath.exists() or output_filepath.stat().st_size == 0:
-            raise RuntimeError("Tạo file video thất bại.")
+        full_filter = "".join(filter_parts)
+
+        # Build FFmpeg command
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-threads", "0",
+            *inputs,
+            "-filter_complex", full_filter,
+            "-map", "[vout]",
+            *(["-map", "[aout]"] if has_final_audio else ["-an"]),
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            *(["-c:a", "aac", "-b:a", "192k"] if has_final_audio else []),
+            *(["-t", str(target_dur)] if target_dur > 0 else []),
+            str(output_filepath)
+        ]
+
+        print("[*] Running FFmpeg complex filter command...")
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+        if result.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
+            print(f"[!] FFmpeg error output:\n{result.stderr}")
+            raise RuntimeError(f"FFmpeg process failed: {result.stderr}")
 
         file_size = output_filepath.stat().st_size
         final_duration = cls.get_video_duration(output_filepath)
-        print(f"[OK] Xu ly video thanh cong! File: {output_filename} ({round(file_size / (1024*1024), 2)} MB, {final_duration:.2f}s)")
+        print(f"[OK] Video processing complete! Output: {output_filename} ({round(file_size / (1024*1024), 2)} MB, {final_duration:.2f}s)")
 
         return {
             "id": video_id,
-            "has_audio": has_audio,
-            "audio_duration": voice_dur,
+            "has_voice": has_voice,
+            "has_bgm": has_bgm,
+            "bgm_volume": bgm_volume,
+            "voice_duration": voice_dur,
             "filename": output_filename,
             "file_size": file_size,
             "video_duration": final_duration,
-            "video_count": len(video_paths),
+            "video_count": num_vids,
             "duration_mode": duration_mode,
             "remove_original_audio": remove_original_audio
         }
