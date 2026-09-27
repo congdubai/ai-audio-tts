@@ -26,6 +26,7 @@ export default function TextEditor({
   speed,
   setSpeed,
   isLoading,
+  progress,
   onSynthesize,
 }) {
   const charCount = text.length;
@@ -130,25 +131,44 @@ export default function TextEditor({
           </div>
         </div>
 
-        <button
-          type="button"
-          id="btn-synthesize"
-          className={`btn-synthesize ${isLoading ? 'loading' : ''}`}
-          onClick={onSynthesize}
-          disabled={isLoading || !text.trim()}
-        >
-          {isLoading ? (
-            <>
-              <Loader2 size={20} className="spin-icon" />
-              <span>Đang tạo giọng nói...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles size={20} />
-              <span>Tạo Giọng Nói (Ngọc Huyền)</span>
-            </>
-          )}
-        </button>
+        {isLoading ? (
+          <div className="progress-status-container">
+            <div className="progress-status-header">
+              <div className="progress-status-title">
+                <Loader2 size={18} className="spin-icon" />
+                <span>{progress?.message || 'Đang xử lý giọng nói...'}</span>
+              </div>
+              <span className="progress-percent-badge">{progress?.percent || 0}%</span>
+            </div>
+
+            <div className="progress-bar-track">
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${Math.max(5, progress?.percent || 0)}%` }}
+              >
+                <div className="progress-shimmer" />
+              </div>
+            </div>
+
+            {progress?.chunk && (
+              <div className="progress-chunk-snippet">
+                <span className="snippet-label">Đang đọc:</span>
+                <span className="snippet-text">"{progress.chunk}"</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            id="btn-synthesize"
+            className="btn-synthesize"
+            onClick={onSynthesize}
+            disabled={!text.trim()}
+          >
+            <Sparkles size={20} />
+            <span>Tạo Giọng Nói (Ngọc Huyền)</span>
+          </button>
+        )}
       </div>
     </div>
   );

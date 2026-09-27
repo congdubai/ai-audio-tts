@@ -29,8 +29,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Vietnamese TTS & Multi-Video Dubbing API (Kokoro - Ngọc Huyền)",
-    description="API chuyển đổi văn bản thành giọng nói & lồng tiếng nối nhiều video tiếng Việt",
-    version="1.2.0",
+    description="API chuyển đổi văn bản thành giọng nói & lồng tiếng nối nhiều video tiếng Việt (Kokoro TTS v0.19 fine-tuned)",
+    version="1.0.0",
     lifespan=lifespan
 )
 
@@ -60,11 +60,16 @@ async def health_check():
         "status": "healthy",
         "model_ready": engine.is_ready,
         "device": engine.device,
+        "model": "Kokoro Vietnamese TTS (dinhthuan/kokoro-vi-ngoc-huyen)",
         "voice": "Ngọc Huyền (Vietnamese)",
         "features": ["text-to-speech", "video-dubbing", "multi-video-concat"]
     }
 
 # ==================== TTS Endpoints ====================
+
+import asyncio
+import json
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 @app.post("/api/tts/synthesize", response_model=SynthesizeResponse)
 async def synthesize_speech(req: SynthesizeRequest):
@@ -90,6 +95,68 @@ async def synthesize_speech(req: SynthesizeRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Lỗi khi xử lý tổng hợp giọng nói: {str(e)}"
         )
+
+@app.post("/api/tts/synthesize-stream")
+async def synthesize_speech_stream(req: SynthesizeRequest):
+    async def event_generator():
+        queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+
+        def progress_cb(current: int, total: int, chunk_text: str):
+            pct = int((current / total) * 85)
+            snippet = chunk_text[:45] + "..." if len(chunk_text) > 45 else chunk_text
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {
+                    "type": "progress",
+                    "current": current,
+                    "total": total,
+                    "percent": pct,
+                    "message": f"Đang đọc đoạn {current}/{total}...",
+                    "chunk": snippet
+                }
+            )
+
+        def run_synth():
+            engine = TTSEngine.get_instance()
+            return engine.synthesize(text=req.text, speed=req.speed, progress_callback=progress_cb)
+
+        future = loop.run_in_executor(None, run_synth)
+
+        while not future.done():
+            try:
+                msg = await asyncio.wait_for(queue.get(), timeout=0.08)
+                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+            except asyncio.TimeoutError:
+                pass
+
+        while not queue.empty():
+            msg = queue.get_nowait()
+            yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+
+        try:
+            result = await future
+            yield f"data: {json.dumps({'type': 'progress', 'percent': 95, 'message': 'Đang ghép nối & chuẩn hóa âm thanh...'}, ensure_ascii=False)}\n\n"
+
+            response_data = SynthesizeResponse(
+                id=result["id"],
+                text=result["text"],
+                speed=result["speed"],
+                duration=result["duration"],
+                sample_rate=result["sample_rate"],
+                phonemes=result["phonemes"],
+                audio_url=f"/api/tts/audio/{result['id']}",
+                download_url=f"/api/tts/download/{result['id']}",
+                file_size=result["file_size"],
+                elapsed_time=result["elapsed_time"],
+                device=result["device"]
+            ).model_dump()
+
+            yield f"data: {json.dumps({'type': 'complete', 'percent': 100, 'result': response_data}, ensure_ascii=False)}\n\n"
+        except Exception as err:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(err)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/api/tts/audio/{audio_id}")
 async def stream_audio(audio_id: str):

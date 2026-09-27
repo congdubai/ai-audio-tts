@@ -3,7 +3,7 @@ import Header from './components/Header';
 import TextEditor from './components/TextEditor';
 import AudioPlayer from './components/AudioPlayer';
 import VideoDubber from './components/VideoDubber';
-import { checkHealth, synthesizeText } from './services/api';
+import { checkHealth, synthesizeTextStream } from './services/api';
 import { AlertCircle, CheckCircle, Sparkles, Volume2, Film } from 'lucide-react';
 
 export default function App() {
@@ -11,6 +11,7 @@ export default function App() {
   const [text, setText] = useState('Xin chào, tôi là giọng đọc Ngọc Huyền. Chúc bạn một ngày tốt lành và tràn đầy năng lượng!');
   const [speed, setSpeed] = useState(1.0);
   const [isLoading, setIsLoading] = useState(false);
+  const [progress, setProgress] = useState(null);
   const [serverStatus, setServerStatus] = useState(null);
   const [currentAudio, setCurrentAudio] = useState(null);
   const [notification, setNotification] = useState(null);
@@ -40,8 +41,12 @@ export default function App() {
     }
 
     setIsLoading(true);
+    setProgress({ percent: 0, current: 0, total: 0, message: 'Khởi động mô hình...', chunk: '' });
+
     try {
-      const result = await synthesizeText(text, speed);
+      const result = await synthesizeTextStream(text, speed, (progData) => {
+        setProgress(progData);
+      });
       setCurrentAudio(result);
       showToast('Tạo giọng nói thành công!', 'success');
     } catch (error) {
@@ -49,6 +54,7 @@ export default function App() {
       showToast(error.message || 'Lỗi khi tạo giọng nói', 'error');
     } finally {
       setIsLoading(false);
+      setProgress(null);
     }
   };
 
@@ -107,6 +113,7 @@ export default function App() {
                 speed={speed}
                 setSpeed={setSpeed}
                 isLoading={isLoading}
+                progress={progress}
                 onSynthesize={handleSynthesize}
               />
             </section>

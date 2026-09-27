@@ -73,6 +73,68 @@ export async function synthesizeText(text, speed = 1.0) {
   };
 }
 
+export async function synthesizeTextStream(text, speed = 1.0, onProgress) {
+  const cleanText = String(text || '').trim();
+  const numSpeed = typeof speed === 'number' ? speed : parseFloat(speed) || 1.0;
+
+  const res = await fetch(`${API_BASE_URL}/api/tts/synthesize-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ text: cleanText, speed: numSpeed }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: 'Lỗi kết nối máy chủ' }));
+    throw new Error(errorData.detail || 'Lỗi server');
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let finalResult = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('data: ')) {
+        const jsonStr = trimmed.slice(6);
+        try {
+          const payload = JSON.parse(jsonStr);
+          if (payload.type === 'progress' && onProgress) {
+            onProgress(payload);
+          } else if (payload.type === 'complete') {
+            finalResult = payload.result;
+          } else if (payload.type === 'error') {
+            throw new Error(payload.message || 'Lỗi khi xử lý giọng nói');
+          }
+        } catch (e) {
+          if (e.message.includes('xử lý giọng nói')) throw e;
+          console.warn('Stream JSON parse error:', e);
+        }
+      }
+    }
+  }
+
+  if (!finalResult) {
+    throw new Error('Không nhận được dữ liệu hoàn chỉnh từ server');
+  }
+
+  return {
+    ...finalResult,
+    fullAudioUrl: getFullUrl(finalResult.audio_url),
+    fullDownloadUrl: getFullUrl(finalResult.download_url),
+  };
+}
+
 export async function fetchHistory() {
   const res = await fetch(`${API_BASE_URL}/api/tts/history`);
   if (!res.ok) throw new Error('Không thể tải lịch sử');

@@ -2,24 +2,29 @@ import sys
 import os
 import uuid
 import time
-import io
-import soundfile as sf
-import numpy as np
 from pathlib import Path
-from typing import Tuple, Dict, Any, Optional
+from typing import Dict, Any, Optional
 
-# Add kokoro-vi-ngoc-huyen repository to sys.path
-MODEL_REPO_DIR = Path(__file__).resolve().parent.parent / "kokoro-vi-ngoc-huyen"
-if str(MODEL_REPO_DIR) not in sys.path:
-    sys.path.insert(0, str(MODEL_REPO_DIR))
+# Add kokoro-vi-ngoc-huyen directory to sys.path
+KOKORO_DIR = Path(__file__).parent.parent / "kokoro-vi-ngoc-huyen"
+if KOKORO_DIR.exists() and str(KOKORO_DIR) not in sys.path:
+    sys.path.insert(0, str(KOKORO_DIR))
 
-try:
-    from infer import KokoroVietnameseTTS
-except ImportError:
-    KokoroVietnameseTTS = None
+# Fix Windows console encoding for Vietnamese characters
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 
 OUTPUTS_DIR = Path(__file__).parent / "outputs"
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 class TTSEngine:
     _instance: Optional['TTSEngine'] = None
@@ -36,50 +41,47 @@ class TTSEngine:
     def initialize(self):
         if self.is_ready:
             return
-        
+
         import torch
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[*] Initializing Kokoro Vietnamese TTS Engine on device: {self.device.upper()}...")
-        
-        model_path = MODEL_REPO_DIR / "model" / "kokoro_vi_ngoc_huyen.pth"
-        voicepack_path = MODEL_REPO_DIR / "voices" / "ngoc_huyen.pt"
-        config_path = MODEL_REPO_DIR / "config.json"
+        print(f"[*] Initializing Kokoro Vietnamese TTS on device: {self.device.upper()}...")
 
-        if not model_path.exists():
-            raise FileNotFoundError(f"Model file not found at: {model_path}")
-        if not voicepack_path.exists():
-            raise FileNotFoundError(f"Voicepack file not found at: {voicepack_path}")
-        if not config_path.exists():
-            raise FileNotFoundError(f"Config file not found at: {config_path}")
+        try:
+            from infer import KokoroVietnameseTTS
+        except ImportError:
+            raise ImportError(
+                "Could not import KokoroVietnameseTTS from kokoro-vi-ngoc-huyen directory."
+            )
 
-        self.tts_model = KokoroVietnameseTTS(
-            model_path=str(model_path),
-            voicepack_path=str(voicepack_path),
-            config_path=str(config_path),
-            device=self.device
-        )
+        self.tts_model = KokoroVietnameseTTS(device=self.device)
         self.is_ready = True
-        print(f"[OK] Kokoro Vietnamese TTS Model loaded successfully! (Voice: Ngoc Huyen)")
+        print(f"[OK] Kokoro Vietnamese TTS loaded successfully! (device: {self.device.upper()})")
 
-    def synthesize(self, text: str, speed: float = 1.0) -> Dict[str, Any]:
+    def synthesize(self, text: str, speed: float = 1.0, progress_callback: Optional[Any] = None) -> Dict[str, Any]:
         if not self.is_ready or self.tts_model is None:
             self.initialize()
+
+        import soundfile as sf
 
         clean_text = text.strip()
         if not clean_text:
             raise ValueError("Văn bản không được để trống.")
 
         start_time = time.time()
-        sample_rate, audio_np, phonemes = self.tts_model.synthesize(clean_text, speed=speed)
-        elapsed_time = round(time.time() - start_time, 3)
 
-        duration = round(len(audio_np) / sample_rate, 2)
+        sample_rate, audio, phonemes = self.tts_model.synthesize(
+            clean_text,
+            speed=speed,
+            progress_callback=progress_callback
+        )
+
+        elapsed_time = round(time.time() - start_time, 3)
+        duration = round(len(audio) / sample_rate, 2)
         audio_id = str(uuid.uuid4())
         filename = f"{audio_id}.wav"
         file_path = OUTPUTS_DIR / filename
 
-        # Write to WAV file
-        sf.write(str(file_path), audio_np, sample_rate)
+        sf.write(str(file_path), audio, sample_rate, subtype='PCM_16')
         file_size = file_path.stat().st_size
 
         return {
@@ -92,7 +94,7 @@ class TTSEngine:
             "filename": filename,
             "file_size": file_size,
             "elapsed_time": elapsed_time,
-            "device": self.device
+            "device": self.device,
         }
 
     def get_audio_path(self, filename: str) -> Optional[Path]:
