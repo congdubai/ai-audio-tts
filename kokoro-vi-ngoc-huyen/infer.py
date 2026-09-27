@@ -127,17 +127,26 @@ def merge_audio_chunks(
     processed_chunks: list[np.ndarray] = []
     for chunk in valid_chunks:
         c = chunk.copy()
-        # Pad chunk quá ngắn với silence ở 2 đầu trước khi fade
-        # → tránh fade chiếm quá nhiều % tổng audio → crack/click tại điểm nối
+
         if len(c) < min_chunk_samples:
+            # Chunk quá ngắn: fade phải áp dụng vào CHÍNH audio TTS trước,
+            # rồi mới ghép silence padding ra ngoài.
+            # Nếu làm ngược (pad trước rồi fade sau) → fade chỉ tác động vào
+            # silence (đã =0) → audio TTS vẫn bắt đầu/kết thúc đột ngột → crack!
+            inner_fade = min(fade_samples, len(c) // 3)
+            if inner_fade > 0:
+                c[:inner_fade] *= np.linspace(0.0, 1.0, inner_fade, dtype=np.float32)
+                c[-inner_fade:] *= np.linspace(1.0, 0.0, inner_fade, dtype=np.float32)
+            # Ghép silence padding ra ngoài audio đã được fade
             c = np.concatenate([silence_pad, c, silence_pad])
-        n = len(c)
-        actual_fade = min(fade_samples, n // 4)
-        if actual_fade > 0:
-            fade_in = np.linspace(0.0, 1.0, actual_fade, dtype=np.float32)
-            fade_out = np.linspace(1.0, 0.0, actual_fade, dtype=np.float32)
-            c[:actual_fade] *= fade_in
-            c[-actual_fade:] *= fade_out
+        else:
+            # Chunk bình thường: fade trực tiếp vào audio
+            n = len(c)
+            actual_fade = min(fade_samples, n // 4)
+            if actual_fade > 0:
+                c[:actual_fade] *= np.linspace(0.0, 1.0, actual_fade, dtype=np.float32)
+                c[-actual_fade:] *= np.linspace(1.0, 0.0, actual_fade, dtype=np.float32)
+
         processed_chunks.append(c)
 
     result: list[np.ndarray] = []
