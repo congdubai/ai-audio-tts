@@ -74,27 +74,33 @@ def split_text(text: str) -> list[str]:
         else:
             merged_chunks.append(chunk)
 
-    # 2. Hướng B: mọi câu hoàn chỉnh (kết thúc .!?…) đều là chunk riêng
-    #    → mỗi câu ngắn được hưởng khoảng nghỉ pause_ms khi ghép → nhịp đọc tự nhiên
-    #    Chỉ gộp fragment (chưa có dấu kết thúc câu) vào câu tiếp theo
+    # 2. Hybrid: câu hoàn chỉnh (kết thúc .!?…) và đủ dài → chunk riêng (nhịp tự nhiên)
+    #            câu siêu ngắn < MIN_STANDALONE → gộp vào câu kề (tránh crack do model)
+    # Giải thích: model Kokoro cần đủ context âm học để sinh audio mượt.
+    # Câu 1-2 từ ("À.", "Chào.") không đủ context → model sinh transient cứng → crack.
+    # Gộp vào câu kề giúp model đọc trong context đầy đủ hơn.
     _SENTENCE_END = re.compile(r"[.!?…]+\s*$")
+    MIN_STANDALONE = 10  # ký tự tối thiểu để câu đứng riêng thành 1 chunk
 
     grouped: list[str] = []
-    pending = ""  # fragment chưa có dấu câu kết thúc
+    pending = ""  # fragment chưa hoàn chỉnh hoặc quá ngắn
 
     for chunk in merged_chunks:
         if pending:
             chunk = f"{pending} {chunk}".strip()
             pending = ""
 
-        if _SENTENCE_END.search(chunk):
-            # Câu hoàn chỉnh → giữ riêng, bất kể ngắn hay dài
+        is_complete = bool(_SENTENCE_END.search(chunk))
+        is_long_enough = len(chunk) >= MIN_STANDALONE
+
+        if is_complete and is_long_enough:
+            # Câu hoàn chỉnh, đủ dài → chunk riêng, hưởng pause_ms giữa các câu
             grouped.append(chunk)
         else:
-            # Fragment chưa kết thúc → chờ gộp vào câu tiếp
+            # Câu quá ngắn hoặc chưa kết thúc → gộp vào câu tiếp để model có context
             pending = chunk
 
-    # Fragment cuối không có câu tiếp → gộp vào câu cuối hoặc thêm mới
+    # Chunk cuối còn pending → gộp vào câu cuối hoặc thêm mới
     if pending:
         if grouped:
             grouped[-1] = f"{grouped[-1]} {pending}".strip()
