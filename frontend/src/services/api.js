@@ -15,14 +15,12 @@ const getFullUrl = (path) => {
 };
 
 export async function checkHealth() {
-  // Thử kết nối URL chính
   try {
     const res = await fetch(`${API_BASE_URL}/api/health`);
     if (res.ok) {
       return await res.json();
     }
   } catch (error) {
-    // Nếu localhost không được, thử fallback sang 127.0.0.1 hoặc ngược lại
     const fallbackUrl = API_BASE_URL.includes('localhost')
       ? 'http://127.0.0.1:8000'
       : 'http://localhost:8000';
@@ -33,7 +31,7 @@ export async function checkHealth() {
         return await fallbackRes.json();
       }
     } catch {
-      // Cả 2 đều chưa kết nối được
+      // Offline
     }
     console.error('Health check error:', error);
     return { status: 'offline', error: error.message };
@@ -154,18 +152,28 @@ export async function deleteHistoryItem(id) {
   return await res.json();
 }
 
-// ==================== Multi-Video Dubbing APIs ====================
+// ==================== Multi-Video Processing APIs ====================
 
-export async function dubVideo(videoFiles, text, speed = 1.0, removeOriginalAudio = true, durationMode = 'full_video') {
+export async function dubVideo(
+  videoFiles,
+  audioFile = null,
+  audioId = null,
+  removeOriginalAudio = true,
+  durationMode = 'full_video'
+) {
   const formData = new FormData();
-  
+
   const filesArray = Array.isArray(videoFiles) ? videoFiles : [videoFiles];
   for (const file of filesArray) {
     formData.append('videos', file);
   }
 
-  formData.append('text', text);
-  formData.append('speed', speed.toString());
+  if (audioFile) {
+    formData.append('audio_file', audioFile);
+  } else if (audioId) {
+    formData.append('audio_id', audioId);
+  }
+
   formData.append('remove_original_audio', removeOriginalAudio ? 'true' : 'false');
   formData.append('duration_mode', durationMode);
 
@@ -175,7 +183,7 @@ export async function dubVideo(videoFiles, text, speed = 1.0, removeOriginalAudi
   });
 
   if (!res.ok) {
-    const errorData = await res.json().catch(() => ({ detail: 'Lỗi khi xử lý lồng tiếng video' }));
+    const errorData = await res.json().catch(() => ({ detail: 'Lỗi khi xử lý video' }));
     throw new Error(errorData.detail || 'Lỗi server');
   }
 

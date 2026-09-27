@@ -1,16 +1,18 @@
 import os
 import shutil
 import uuid
+import asyncio
+import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from tts_service import TTSEngine, OUTPUTS_DIR
 from video_service import VideoDubbingService, VIDEO_OUTPUTS_DIR, VIDEO_UPLOADS_DIR
-from db import init_db
+from db import init_db, add_history_entry, get_history, delete_history_entry, add_video_history_entry, get_video_history
 from models import SynthesizeRequest, SynthesizeResponse, HistoryItem
 
 @asynccontextmanager
@@ -28,8 +30,8 @@ async def lifespan(app: FastAPI):
     print("[*] Server shutting down...")
 
 app = FastAPI(
-    title="Vietnamese TTS & Multi-Video Dubbing API (Kokoro - Ngọc Huyền)",
-    description="API chuyển đổi văn bản thành giọng nói & lồng tiếng nối nhiều video tiếng Việt (Kokoro TTS v0.19 fine-tuned)",
+    title="Vietnamese TTS & Multi-Video Processing API (Kokoro - Ngọc Huyền)",
+    description="API chuyển đổi văn bản thành giọng nói & lồng tiếng / ghép / xóa âm video tiếng Việt",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -62,20 +64,30 @@ async def health_check():
         "device": engine.device,
         "model": "Kokoro Vietnamese TTS (dinhthuan/kokoro-vi-ngoc-huyen)",
         "voice": "Ngọc Huyền (Vietnamese)",
-        "features": ["text-to-speech", "video-dubbing", "multi-video-concat"]
+        "features": ["text-to-speech", "video-dubbing", "multi-video-concat", "video-audio-merge", "strip-audio"]
     }
 
 # ==================== TTS Endpoints ====================
-
-import asyncio
-import json
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 @app.post("/api/tts/synthesize", response_model=SynthesizeResponse)
 async def synthesize_speech(req: SynthesizeRequest):
     try:
         engine = TTSEngine.get_instance()
         result = engine.synthesize(text=req.text, speed=req.speed)
+
+        # Save to DB history
+        try:
+            add_history_entry(
+                item_id=result["id"],
+                text=result["text"],
+                speed=result["speed"],
+                duration=result["duration"],
+                phonemes=result["phonemes"],
+                filename=result["filename"],
+                file_size=result["file_size"]
+            )
+        except Exception as e:
+            print(f"[!] Warning: Unable to save to history DB: {e}")
 
         return SynthesizeResponse(
             id=result["id"],
@@ -138,6 +150,20 @@ async def synthesize_speech_stream(req: SynthesizeRequest):
             result = await future
             yield f"data: {json.dumps({'type': 'progress', 'percent': 95, 'message': 'Đang ghép nối & chuẩn hóa âm thanh...'}, ensure_ascii=False)}\n\n"
 
+            # Save to DB history
+            try:
+                add_history_entry(
+                    item_id=result["id"],
+                    text=result["text"],
+                    speed=result["speed"],
+                    duration=result["duration"],
+                    phonemes=result["phonemes"],
+                    filename=result["filename"],
+                    file_size=result["file_size"]
+                )
+            except Exception as e:
+                print(f"[!] Warning: Unable to save to history DB: {e}")
+
             response_data = SynthesizeResponse(
                 id=result["id"],
                 text=result["text"],
@@ -187,9 +213,47 @@ async def download_audio(audio_id: str):
         headers={"Content-Disposition": f'attachment; filename="{download_name}"'}
     )
 
-@app.get("/api/tts/history", response_model=list[HistoryItem])
+@app.get("/api/tts/history")
 async def list_history():
-    return []
+    db_items = get_history(limit=50)
+    db_ids = {item["id"] for item in db_items}
+    items = []
+
+    for item in db_items:
+        items.append({
+            "id": item["id"],
+            "text": item["text"],
+            "speed": item["speed"],
+            "duration": item["duration"],
+            "phonemes": item.get("phonemes", ""),
+            "filename": item["filename"],
+            "file_size": item["file_size"],
+            "audio_url": f"/api/tts/audio/{item['id']}",
+            "download_url": f"/api/tts/download/{item['id']}",
+            "created_at": item.get("created_at", "")
+        })
+
+    # Also check outputs folder for any wav file not in DB
+    if OUTPUTS_DIR.exists():
+        for wav_file in sorted(OUTPUTS_DIR.glob("*.wav"), key=lambda f: f.stat().st_mtime, reverse=True):
+            audio_id = wav_file.stem
+            if audio_id not in db_ids:
+                size = wav_file.stat().st_size
+                dur = round(size / (24000 * 2), 2)
+                items.append({
+                    "id": audio_id,
+                    "text": f"File Audio TTS ({audio_id[:8]})",
+                    "speed": 1.0,
+                    "duration": dur,
+                    "phonemes": "",
+                    "filename": wav_file.name,
+                    "file_size": size,
+                    "audio_url": f"/api/tts/audio/{audio_id}",
+                    "download_url": f"/api/tts/download/{audio_id}",
+                    "created_at": ""
+                })
+
+    return items
 
 @app.delete("/api/tts/history/{audio_id}")
 async def delete_history(audio_id: str):
@@ -199,47 +263,62 @@ async def delete_history(audio_id: str):
             os.remove(file_path)
         except Exception:
             pass
-
+    delete_history_entry(audio_id)
     return {"status": "success", "message": "Đã xóa bản ghi thành công."}
 
-# ==================== Multi-Video Dubbing Endpoints ====================
+# ==================== Multi-Video Dubbing & Processing Endpoints ====================
 
 @app.post("/api/video/dub")
 async def dub_multiple_videos(
     videos: List[UploadFile] = File(...),
-    text: str = Form(...),
-    speed: float = Form(1.0),
+    audio_file: Optional[UploadFile] = File(None),
+    audio_id: Optional[str] = Form(None),
     remove_original_audio: bool = Form(True),
     duration_mode: str = Form("full_video")  # "full_video" | "match_voice" | "loop_voice"
 ):
     temp_paths: List[Path] = []
+    temp_audio_path: Optional[Path] = None
+    is_custom_uploaded_audio = False
+
     try:
-        clean_text = text.strip()
-        if not clean_text:
-            raise HTTPException(status_code=400, detail="Văn bản lồng tiếng không được để trống.")
         if not videos or len(videos) == 0:
             raise HTTPException(status_code=400, detail="Vui lòng tải lên ít nhất 1 video.")
 
-        print(f"[*] Nhan yeu cau long tieng: {len(videos)} file video, che do: {duration_mode}...")
-        # Save all uploaded videos to temporary files
+        # Save video uploads
         for idx, video in enumerate(videos):
-            print(f"[*] Dang luu file video tam {idx+1}/{len(videos)}: {video.filename}...")
             temp_filename = f"upload_{idx}_{uuid.uuid4()}_{video.filename}"
             temp_path = VIDEO_UPLOADS_DIR / temp_filename
             with open(temp_path, "wb") as buffer:
                 shutil.copyfileobj(video.file, buffer)
             temp_paths.append(temp_path)
 
-        # Process multi-video dubbing and concatenation
+        # Handle Audio input source
+        if audio_file is not None and audio_file.filename:
+            print(f"[*] Nhận file audio tải lên từ người dùng: {audio_file.filename}")
+            temp_audio_name = f"upload_audio_{uuid.uuid4()}_{audio_file.filename}"
+            temp_audio_path = VIDEO_UPLOADS_DIR / temp_audio_name
+            with open(temp_audio_path, "wb") as buffer:
+                shutil.copyfileobj(audio_file.file, buffer)
+            is_custom_uploaded_audio = True
+
+        elif audio_id and audio_id.strip() and audio_id != "none":
+            clean_audio_id = audio_id.strip()
+            existing_audio = OUTPUTS_DIR / f"{clean_audio_id}.wav"
+            if existing_audio.exists():
+                print(f"[*] Sử dụng file audio từ lịch sử TTS: {clean_audio_id}.wav")
+                temp_audio_path = existing_audio
+            else:
+                print(f"[!] Warning: Audio ID '{clean_audio_id}' không tồn tại.")
+
+        # Process video (dub, merge, strip audio)
         result = VideoDubbingService.process_video_dubbing(
             video_paths=temp_paths,
-            text=clean_text,
-            speed=speed,
+            audio_file_path=temp_audio_path,
             remove_original_audio=remove_original_audio,
             duration_mode=duration_mode
         )
 
-        # Cleanup uploaded raw videos
+        # Cleanup video temp files
         for tp in temp_paths:
             if tp.exists():
                 try:
@@ -247,16 +326,24 @@ async def dub_multiple_videos(
                 except Exception:
                     pass
 
+        # Cleanup custom uploaded audio temp file
+        if is_custom_uploaded_audio and temp_audio_path and temp_audio_path.exists():
+            try:
+                os.remove(temp_audio_path)
+            except Exception:
+                pass
+
         return {
             "id": result["id"],
-            "text": result["text"],
-            "speed": result["speed"],
-            "duration": result["audio_duration"],
+            "has_audio": result["has_audio"],
+            "duration": result["video_duration"],
             "video_url": f"/api/video/stream/{result['id']}",
             "download_url": f"/api/video/download/{result['id']}",
             "file_size": result["file_size"],
-            "video_count": result.get("video_count", len(videos))
+            "video_count": result.get("video_count", len(videos)),
+            "remove_original_audio": result["remove_original_audio"]
         }
+
     except Exception as e:
         # Cleanup on error
         for tp in temp_paths:
@@ -265,9 +352,14 @@ async def dub_multiple_videos(
                     os.remove(tp)
                 except Exception:
                     pass
+        if is_custom_uploaded_audio and temp_audio_path and temp_audio_path.exists():
+            try:
+                os.remove(temp_audio_path)
+            except Exception:
+                pass
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Lỗi khi xử lý lồng tiếng video: {str(e)}"
+            detail=f"Lỗi khi xử lý video: {str(e)}"
         )
 
 @app.get("/api/video/stream/{video_id}")

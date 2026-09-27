@@ -137,16 +137,16 @@ export default function App() {
           </main>
         )}
 
-        {/* Tab 2: Video Dubbing */}
+        {/* Tab 2: Video Processing & Dubbing */}
         {activeTab === 'video' && (
           <main className="animate-fade-in">
-            <VideoDubber showToast={showToast} />
+            <VideoDubber showToast={showToast} currentAudio={currentAudio} />
           </main>
         )}
 
         <footer className="footer-bar">
           <p>
-            Kokoro Vietnamese TTS Engine • Model Finetuned Giọng Ngọc Huyền • Video Dubbing with FFmpeg
+            Kokoro Vietnamese TTS Engine • Model Finetuned Giọng Ngọc Huyền • Video Processing with FFmpeg
           </p>
         </footer>
       </div>
