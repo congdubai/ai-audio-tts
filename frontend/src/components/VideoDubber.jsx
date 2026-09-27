@@ -30,11 +30,9 @@ export default function VideoDubber({ showToast, currentAudio }) {
 
   // Voice Audio States
   const [audioSourceType, setAudioSourceType] = useState('history'); // 'history' | 'upload' | 'none'
-  const [customAudioFile, setCustomAudioFile] = useState(null);
-  const [customAudioUrl, setCustomAudioUrl] = useState(null);
-  const [selectedAudioId, setSelectedAudioId] = useState('');
+  const [voicePlaylist, setVoicePlaylist] = useState([]); // List of { id, type: 'history'|'file', name, duration, fileObj, audioId }
+  const [selectedHistoryId, setSelectedHistoryId] = useState('');
   const [historyAudios, setHistoryAudios] = useState([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Background Music (BGM) States
   const [bgmFile, setBgmFile] = useState(null);
@@ -60,29 +58,37 @@ export default function VideoDubber({ showToast, currentAudio }) {
     loadAudioHistory();
   }, []);
 
-  // Update selected audio ID if currentAudio changes
+  // Auto-add currentAudio if changed
   useEffect(() => {
     if (currentAudio?.id) {
-      setSelectedAudioId(currentAudio.id);
+      setVoicePlaylist((prev) => {
+        if (!prev.some((item) => item.audioId === currentAudio.id)) {
+          return [
+            ...prev,
+            {
+              id: `history_${currentAudio.id}`,
+              type: 'history',
+              audioId: currentAudio.id,
+              name: `(⭐ Vừa tạo) ${currentAudio.text.slice(0, 40)}...`,
+              duration: currentAudio.duration,
+            }
+          ];
+        }
+        return prev;
+      });
       setAudioSourceType('history');
     }
   }, [currentAudio]);
 
   const loadAudioHistory = async () => {
-    setIsLoadingHistory(true);
     try {
       const items = await fetchHistory();
       setHistoryAudios(items);
-
-      if (currentAudio?.id) {
-        setSelectedAudioId(currentAudio.id);
-      } else if (items.length > 0 && !selectedAudioId) {
-        setSelectedAudioId(items[0].id);
+      if (items.length > 0 && !selectedHistoryId) {
+        setSelectedHistoryId(items[0].id);
       }
     } catch (error) {
       console.warn('Unable to load audio history:', error);
-    } finally {
-      setIsLoadingHistory(false);
     }
   };
 
@@ -153,24 +159,65 @@ export default function VideoDubber({ showToast, currentAudio }) {
     setSelectedPreviewIndex(targetIndex);
   };
 
-  // Custom Voice Audio Upload Handler
-  const handleCustomAudioChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('audio/') && !/\.(wav|mp3|m4a|aac|flac|ogg)$/i.test(file.name)) {
-        showToast('Vui lòng chọn file âm thanh (.wav, .mp3, .m4a, .aac, .flac, .ogg)', 'error');
-        return;
-      }
-      setCustomAudioFile(file);
-      setCustomAudioUrl(URL.createObjectURL(file));
-      setAudioSourceType('upload');
-    }
+  // Voice Audio Playlist Handlers
+  const addHistoryAudioToPlaylist = () => {
+    const item = historyAudios.find((h) => h.id === selectedHistoryId) ||
+      (currentAudio?.id === selectedHistoryId ? currentAudio : null);
+    if (!item) return;
+
+    const newItem = {
+      id: `history_${item.id}_${Date.now()}`,
+      type: 'history',
+      audioId: item.id,
+      name: item.text ? (item.text.length > 45 ? item.text.slice(0, 45) + '...' : item.text) : item.filename,
+      duration: item.duration,
+    };
+
+    setVoicePlaylist((prev) => [...prev, newItem]);
+    showToast(`Đã thêm giọng đọc "${newItem.name}" vào danh sách!`, 'success');
   };
 
-  const clearCustomAudio = () => {
-    setCustomAudioFile(null);
-    setCustomAudioUrl(null);
-    if (audioFileInputRef.current) audioFileInputRef.current.value = '';
+  const handleCustomAudioFilesChange = (e) => {
+    const files = Array.from(e.target.files || []);
+    const validAudios = files.filter(f => f.type.startsWith('audio/') || /\.(wav|mp3|m4a|aac|flac|ogg)$/i.test(f.name));
+
+    if (validAudios.length === 0) {
+      showToast('Vui lòng chọn các file âm thanh (.wav, .mp3, .m4a, .aac)', 'error');
+      return;
+    }
+
+    const newItems = validAudios.map((file) => ({
+      id: `file_${Date.now()}_${Math.random()}`,
+      type: 'file',
+      fileObj: file,
+      name: file.name,
+      size: file.size,
+    }));
+
+    setVoicePlaylist((prev) => [...prev, ...newItems]);
+    setAudioSourceType('upload');
+    showToast(`Đã thêm ${validAudios.length} file giọng đọc vào danh sách!`, 'success');
+  };
+
+  const moveVoiceOrder = (index, direction) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= voicePlaylist.length) return;
+
+    setVoicePlaylist((prev) => {
+      const copy = [...prev];
+      const temp = copy[index];
+      copy[index] = copy[targetIndex];
+      copy[targetIndex] = temp;
+      return copy;
+    });
+  };
+
+  const removeVoiceItem = (indexToRemove) => {
+    setVoicePlaylist((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+  };
+
+  const clearVoicePlaylist = () => {
+    setVoicePlaylist([]);
   };
 
   // Background Music (BGM) Upload Handler
@@ -200,29 +247,25 @@ export default function VideoDubber({ showToast, currentAudio }) {
       return;
     }
 
-    let audioFileToSend = null;
-    let audioIdToSend = null;
+    const audioFilesToSend = [];
+    const audioIdsToSend = [];
 
-    if (audioSourceType === 'upload') {
-      if (!customAudioFile) {
-        showToast('Vui lòng chọn file Audio Giọng Đọc!', 'error');
-        return;
+    if (audioSourceType !== 'none' && voicePlaylist.length > 0) {
+      for (const item of voicePlaylist) {
+        if (item.type === 'file' && item.fileObj) {
+          audioFilesToSend.push(item.fileObj);
+        } else if (item.type === 'history' && item.audioId) {
+          audioIdsToSend.push(item.audioId);
+        }
       }
-      audioFileToSend = customAudioFile;
-    } else if (audioSourceType === 'history') {
-      if (!selectedAudioId) {
-        showToast('Vui lòng chọn 1 bản ghi giọng đọc TTS từ danh sách!', 'error');
-        return;
-      }
-      audioIdToSend = selectedAudioId;
     }
 
     setIsLoading(true);
     try {
       const result = await dubVideo(
         videoFiles,
-        audioFileToSend,
-        audioIdToSend,
+        audioFilesToSend,
+        audioIdsToSend,
         bgmFile,
         bgmVolume,
         removeOriginalAudio,
@@ -230,10 +273,10 @@ export default function VideoDubber({ showToast, currentAudio }) {
       );
       setDubbedResult(result);
 
-      if (audioSourceType !== 'none' && bgmFile) {
-        showToast(`Đã ghép thành công Video + Giọng Đọc + Nhạc Nền!`, 'success');
-      } else if (audioSourceType !== 'none') {
-        showToast(`Đã ghép Video + Giọng Đọc thành công!`, 'success');
+      if (voicePlaylist.length > 0 && bgmFile) {
+        showToast(`Đã nối ${voicePlaylist.length} giọng đọc & ghép vào Video thành công!`, 'success');
+      } else if (voicePlaylist.length > 0) {
+        showToast(`Đã nối ${voicePlaylist.length} giọng đọc vào Video thành công!`, 'success');
       } else if (bgmFile) {
         showToast(`Đã ghép Video + Nhạc Nền thành công!`, 'success');
       } else if (removeOriginalAudio) {
@@ -305,7 +348,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
                 <div className="dropzone-icon-pulse">
                   <UploadCloud size={32} className="dropzone-icon" />
                 </div>
-                <h4>Kéo thả hoặc Nhấp để chọn Video</h4>
+                <h4>Kéo thả hoặc Nhấp để chọn Nhiều Video</h4>
                 <p>Hỗ trợ chọn cùng lúc 1 hoặc nhiều clip MP4, MOV, MKV, WebM</p>
               </div>
             </div>
@@ -407,13 +450,25 @@ export default function VideoDubber({ showToast, currentAudio }) {
           )}
         </div>
 
-        {/* Section 2: Voice Audio (Giọng Đọc Truyện) */}
+        {/* Section 2: Voice Audio Playlist */}
         <div className="card" style={{ marginTop: '20px' }}>
           <div className="card-header">
             <div className="card-title-group">
               <Volume2 size={20} className="card-header-icon" style={{ color: '#6366f1' }} />
-              <h2 className="card-title">2. Chọn Audio Giọng Đọc (Lời Bình / Thuyết Minh)</h2>
+              <h2 className="card-title">
+                2. Chọn & Nối Nhiều Giọng Đọc ({voicePlaylist.length} File)
+              </h2>
             </div>
+            {voicePlaylist.length > 0 && (
+              <button
+                type="button"
+                className="btn-text-action"
+                onClick={clearVoicePlaylist}
+                title="Xóa tất cả giọng đọc"
+              >
+                <Trash2 size={16} /> Xóa tất cả
+              </button>
+            )}
           </div>
 
           {/* Voice Tabs */}
@@ -425,7 +480,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
               style={{ flex: 1, padding: '10px 14px', fontSize: '0.88rem' }}
             >
               <ListMusic size={16} />
-              <span>Chọn từ Lịch Sử TTS</span>
+              <span>Thêm từ Lịch Sử TTS</span>
             </button>
 
             <button
@@ -435,7 +490,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
               style={{ flex: 1, padding: '10px 14px', fontSize: '0.88rem' }}
             >
               <FileAudio size={16} />
-              <span>Tải File Giọng Đọc</span>
+              <span>Tải Nhiều File Giọng Đọc</span>
             </button>
 
             <button
@@ -445,56 +500,19 @@ export default function VideoDubber({ showToast, currentAudio }) {
               style={{ flex: 1, padding: '10px 14px', fontSize: '0.88rem' }}
             >
               <VolumeX size={16} />
-              <span>Không Dùng Giọng Đọc</span>
+              <span>Bỏ Dùng Giọng Đọc</span>
             </button>
           </div>
 
-          {/* Content: History */}
+          {/* Content: Add from TTS History */}
           {audioSourceType === 'history' && (
             <div className="audio-history-picker" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {currentAudio && (
-                <div
-                  className={`audio-pick-card ${selectedAudioId === currentAudio.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedAudioId(currentAudio.id)}
-                  style={{
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    border: selectedAudioId === currentAudio.id ? '2px solid #6366f1' : '1px solid rgba(255,255,255,0.1)',
-                    background: selectedAudioId === currentAudio.id ? 'rgba(99,102,241,0.15)' : 'rgba(255,255,255,0.03)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div style={{ padding: '8px', background: '#6366f1', borderRadius: '8px', color: 'white' }}>
-                      <Volume2 size={18} />
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.92rem', color: '#f8fafc' }}>
-                        ⭐ Giọng đọc vừa tạo ở Tab TTS ({currentAudio.duration}s)
-                      </div>
-                      <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px', maxWidth: '350px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        "{currentAudio.text}"
-                      </div>
-                    </div>
-                  </div>
-                  {selectedAudioId === currentAudio.id && (
-                    <CheckCircle2 size={20} style={{ color: '#6366f1', flexShrink: 0 }} />
-                  )}
-                </div>
-              )}
-
-              <div className="select-wrapper">
-                <label style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '6px', display: 'block' }}>
-                  Danh sách giọng đọc TTS sẵn có:
-                </label>
+              <div style={{ display: 'flex', gap: '10px' }}>
                 <select
-                  value={selectedAudioId}
-                  onChange={(e) => setSelectedAudioId(e.target.value)}
+                  value={selectedHistoryId}
+                  onChange={(e) => setSelectedHistoryId(e.target.value)}
                   style={{
-                    width: '100%',
+                    flex: 1,
                     padding: '12px 16px',
                     borderRadius: '10px',
                     background: 'rgba(18, 22, 34, 0.95)',
@@ -514,80 +532,102 @@ export default function VideoDubber({ showToast, currentAudio }) {
                     </option>
                   ))}
                 </select>
-              </div>
 
-              {selectedAudioId && (
-                <div style={{ marginTop: '4px', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
-                  <audio
-                    key={selectedAudioId}
-                    src={`http://127.0.0.1:8000/api/tts/audio/${selectedAudioId}`}
-                    controls
-                    style={{ width: '100%', height: '36px' }}
-                  />
-                </div>
-              )}
+                <button
+                  type="button"
+                  className="btn-add-more-video"
+                  onClick={addHistoryAudioToPlaylist}
+                  style={{ whiteSpace: 'nowrap', padding: '0 16px', background: '#6366f1' }}
+                >
+                  <Plus size={16} /> Thêm Giọng Này
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Content: Custom Upload */}
+          {/* Content: Multi Upload */}
           {audioSourceType === 'upload' && (
             <div className="audio-upload-box">
-              {!customAudioFile ? (
-                <div
-                  className="dropzone-box"
-                  onClick={() => audioFileInputRef.current?.click()}
-                  style={{ padding: '20px 16px' }}
-                >
-                  <input
-                    type="file"
-                    ref={audioFileInputRef}
-                    onChange={handleCustomAudioChange}
-                    accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg"
-                    style={{ display: 'none' }}
-                  />
-                  <div className="dropzone-content">
-                    <FileAudio size={28} className="dropzone-icon" style={{ color: '#6366f1' }} />
-                    <h4 style={{ marginTop: '8px', fontSize: '0.95rem' }}>Nhấp chọn file Giọng Đọc từ máy tính</h4>
-                    <p style={{ fontSize: '0.8rem' }}>Hỗ trợ WAV, MP3, M4A, AAC, FLAC, OGG</p>
-                  </div>
+              <div
+                className="dropzone-box"
+                onClick={() => audioFileInputRef.current?.click()}
+                style={{ padding: '20px 16px' }}
+              >
+                <input
+                  type="file"
+                  ref={audioFileInputRef}
+                  onChange={handleCustomAudioFilesChange}
+                  accept="audio/*,.wav,.mp3,.m4a,.aac,.flac,.ogg"
+                  multiple
+                  style={{ display: 'none' }}
+                />
+                <div className="dropzone-content">
+                  <FileAudio size={28} className="dropzone-icon" style={{ color: '#6366f1' }} />
+                  <h4 style={{ marginTop: '8px', fontSize: '0.95rem' }}>Nhấp hoặc kéo thả để chọn CÙNG LÚC NHIỀU FILE Giọng Đọc</h4>
+                  <p style={{ fontSize: '0.8rem' }}>Hỗ trợ WAV, MP3, M4A, AAC, FLAC, OGG</p>
                 </div>
-              ) : (
-                <div style={{ padding: '14px 18px', background: 'rgba(99,102,241,0.12)', borderRadius: '12px', border: '1px solid rgba(99,102,241,0.3)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <FileAudio size={20} style={{ color: '#6366f1' }} />
-                      <div>
-                        <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.92rem' }}>{customAudioFile.name}</div>
-                        <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>{formatFileSize(customAudioFile.size)}</div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn-order-action delete"
-                      onClick={clearCustomAudio}
-                      title="Xóa file này"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-
-                  {customAudioUrl && (
-                    <audio src={customAudioUrl} controls style={{ width: '100%', height: '36px' }} />
-                  )}
-                </div>
-              )}
+              </div>
             </div>
           )}
 
-          {/* Content: None */}
-          {audioSourceType === 'none' && (
-            <div style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8', fontSize: '0.88rem' }}>
-              Không sử dụng âm thanh giọng đọc (chỉ xử lý video hoặc lồng nhạc nền).
+          {/* Active Voice Playlist Items */}
+          {audioSourceType !== 'none' && voicePlaylist.length > 0 && (
+            <div className="playlist-container" style={{ marginTop: '16px' }}>
+              <div className="playlist-header">
+                <div className="playlist-title">
+                  <Layers size={16} />
+                  <span>Các file giọng đọc sẽ được NỐI NỐI TIẾP theo thứ tự ({voicePlaylist.length} file):</span>
+                </div>
+              </div>
+
+              <div className="playlist-items-list">
+                {voicePlaylist.map((item, idx) => (
+                  <div key={item.id} className="playlist-item">
+                    <div className="playlist-item-left">
+                      <span className="clip-number" style={{ background: 'rgba(99,102,241,0.2)', color: '#6366f1' }}>#{idx + 1}</span>
+                      <div className="clip-info">
+                        <span className="clip-name">{item.name}</span>
+                        {item.duration && <span className="clip-size">Thời lượng: {item.duration}s</span>}
+                        {item.size && <span className="clip-size">{formatFileSize(item.size)}</span>}
+                      </div>
+                    </div>
+
+                    <div className="playlist-item-actions">
+                      <button
+                        type="button"
+                        className="btn-order-action"
+                        onClick={() => moveVoiceOrder(idx, -1)}
+                        disabled={idx === 0}
+                        title="Di chuyển lên trước"
+                      >
+                        <ArrowUp size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-order-action"
+                        onClick={() => moveVoiceOrder(idx, 1)}
+                        disabled={idx === voicePlaylist.length - 1}
+                        title="Di chuyển xuống sau"
+                      >
+                        <ArrowDown size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-order-action delete"
+                        onClick={() => removeVoiceItem(idx)}
+                        title="Xóa file giọng này"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Section 3: Background Music (Nhạc Nền Truyện) */}
+        {/* Section 3: Background Music */}
         <div className="card" style={{ marginTop: '20px' }}>
           <div className="card-header">
             <div className="card-title-group">
@@ -600,7 +640,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
             <div
               className="dropzone-box"
               onClick={() => bgmFileInputRef.current?.click()}
-              style={{ padding: '22px 16px' }}
+              style={{ padding: '20px 16px' }}
             >
               <input
                 type="file"
@@ -610,8 +650,8 @@ export default function VideoDubber({ showToast, currentAudio }) {
                 style={{ display: 'none' }}
               />
               <div className="dropzone-content">
-                <Music size={30} className="dropzone-icon" style={{ color: '#ec4899' }} />
-                <h4 style={{ marginTop: '8px', fontSize: '0.95rem' }}>Nhấp để tải file Nhạc Nền từ máy tính</h4>
+                <Music size={28} className="dropzone-icon" style={{ color: '#ec4899' }} />
+                <h4 style={{ marginTop: '8px', fontSize: '0.95rem' }}>Nhấp để chọn file Nhạc Nền từ máy tính</h4>
                 <p style={{ fontSize: '0.8rem' }}>Chọn bài nhạc không lời hay hiệu ứng âm thanh (.MP3, .WAV, .M4A)</p>
               </div>
             </div>
@@ -641,7 +681,6 @@ export default function VideoDubber({ showToast, currentAudio }) {
             </div>
           )}
 
-          {/* BGM Volume Slider (Active if BGM uploaded) */}
           {bgmFile && (
             <div className="speed-control-group" style={{ marginTop: '16px', background: 'rgba(255,255,255,0.03)', padding: '14px', borderRadius: '12px' }}>
               <div className="speed-header">
@@ -665,7 +704,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
                 style={{ accentColor: '#ec4899' }}
               />
               <span style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '6px', display: 'block' }}>
-                💡 Mức {Math.round(bgmVolume * 100)}% vừa đủ nghe êm dịu, không bị át giọng đọc truyện.
+                💡 Mức {Math.round(bgmVolume * 100)}% vừa đủ nghe êm dịu, không bị át các giọng đọc.
               </span>
             </div>
           )}
@@ -681,8 +720,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
           </div>
 
           <div className="controls-panel">
-            {/* Duration Mode options */}
-            {(audioSourceType !== 'none' || bgmFile) && (
+            {(voicePlaylist.length > 0 || bgmFile) && (
               <div className="duration-mode-box">
                 <span className="duration-mode-title">Chế độ khớp độ dài video:</span>
                 <div className="duration-options-list">
@@ -705,7 +743,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
                       checked={durationMode === 'match_voice'}
                       onChange={() => setDurationMode('match_voice')}
                     />
-                    <span>✂️ Cắt ngắn video theo độ dài Giọng Đọc</span>
+                    <span>✂️ Cắt ngắn video theo tổng độ dài Các Giọng Đọc</span>
                   </label>
 
                   <label className={`duration-option-pill ${durationMode === 'loop_voice' ? 'active' : ''}`}>
@@ -716,13 +754,12 @@ export default function VideoDubber({ showToast, currentAudio }) {
                       checked={durationMode === 'loop_voice'}
                       onChange={() => setDurationMode('loop_voice')}
                     />
-                    <span>🔁 Lặp lại Giọng Đọc đến hết video</span>
+                    <span>🔁 Lặp lại Các Giọng Đọc đến hết video</span>
                   </label>
                 </div>
               </div>
             )}
 
-            {/* Checkbox: Mute Original Audio */}
             <label className="checkbox-control" style={{ marginTop: '12px' }}>
               <input
                 type="checkbox"
@@ -732,12 +769,11 @@ export default function VideoDubber({ showToast, currentAudio }) {
               <div className="checkbox-label-group">
                 <VolumeX size={16} />
                 <span>
-                  Xóa âm thanh gốc của video gốc (Khuyên dùng khi lồng truyện & nhạc nền)
+                  Xóa âm thanh gốc của video gốc (Khuyên dùng khi ghép giọng đọc & nhạc nền)
                 </span>
               </div>
             </label>
 
-            {/* Submit Action Button */}
             <button
               type="button"
               className={`btn-synthesize ${isLoading ? 'loading' : ''}`}
@@ -748,16 +784,16 @@ export default function VideoDubber({ showToast, currentAudio }) {
               {isLoading ? (
                 <>
                   <Loader2 size={20} className="spin-icon" />
-                  <span>Đang hòa âm & xử lý video bằng FFmpeg...</span>
+                  <span>Đang nối {voicePlaylist.length} giọng & hòa âm vào Video bằng FFmpeg...</span>
                 </>
               ) : (
                 <>
                   <Sparkles size={20} />
                   <span>
-                    {audioSourceType !== 'none' && bgmFile
-                      ? `✨ Ghép Video + Giọng Đọc + Nhạc Nền (.MP4)`
-                      : audioSourceType !== 'none'
-                      ? `✨ Ghép Video + Giọng Đọc (.MP4)`
+                    {voicePlaylist.length > 0 && bgmFile
+                      ? `✨ Nối ${voicePlaylist.length} Giọng Đọc + Nhạc Nền + Video (.MP4)`
+                      : voicePlaylist.length > 0
+                      ? `✨ Nối ${voicePlaylist.length} Giọng Đọc + Video (.MP4)`
                       : bgmFile
                       ? `✨ Ghép Video + Nhạc Nền (.MP4)`
                       : removeOriginalAudio
@@ -807,7 +843,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
               </span>
               {dubbedResult.has_voice && (
                 <span className="meta-pill">
-                  🎙️ Đã ghép Giọng đọc
+                  🎙️ Đã nối {dubbedResult.voice_count || 1} file giọng đọc
                 </span>
               )}
               {dubbedResult.has_bgm && (
@@ -832,7 +868,7 @@ export default function VideoDubber({ showToast, currentAudio }) {
                 <Film size={36} className="placeholder-icon" />
               </div>
               <h3>Xem trước Video kết quả</h3>
-              <p>Tải lên video, chọn giọng đọc truyện & nhạc nền rồi bấm xử lý để xem và tải về</p>
+              <p>Tải lên 1 hoặc nhiều video, thêm danh sách các giọng đọc & nhạc nền rồi bấm xử lý để xem và tải về</p>
             </div>
           </div>
         )}

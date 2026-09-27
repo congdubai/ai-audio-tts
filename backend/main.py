@@ -64,7 +64,7 @@ async def health_check():
         "device": engine.device,
         "model": "Kokoro Vietnamese TTS (dinhthuan/kokoro-vi-ngoc-huyen)",
         "voice": "Ngọc Huyền (Vietnamese)",
-        "features": ["text-to-speech", "video-dubbing", "multi-video-concat", "video-audio-merge", "strip-audio", "background-music"]
+        "features": ["text-to-speech", "video-dubbing", "multi-video-concat", "multi-voice-concat", "video-audio-merge", "strip-audio", "background-music"]
     }
 
 # ==================== TTS Endpoints ====================
@@ -271,17 +271,19 @@ async def delete_history(audio_id: str):
 @app.post("/api/video/dub")
 async def dub_multiple_videos(
     videos: List[UploadFile] = File(...),
+    audio_files: Optional[List[UploadFile]] = File(None),
     audio_file: Optional[UploadFile] = File(None),
     audio_id: Optional[str] = Form(None),
+    audio_ids: Optional[str] = Form(None),
     bgm_file: Optional[UploadFile] = File(None),
     bgm_volume: float = Form(0.2),
     remove_original_audio: bool = Form(True),
     duration_mode: str = Form("full_video")  # "full_video" | "match_voice" | "loop_voice"
 ):
     temp_paths: List[Path] = []
-    temp_audio_path: Optional[Path] = None
+    temp_audio_paths: List[Path] = []
+    custom_uploaded_audio_paths: List[Path] = []
     temp_bgm_path: Optional[Path] = None
-    is_custom_uploaded_audio = False
     is_custom_uploaded_bgm = False
 
     try:
@@ -296,21 +298,34 @@ async def dub_multiple_videos(
                 shutil.copyfileobj(video.file, buffer)
             temp_paths.append(temp_path)
 
-        # Handle Voice Audio input source
-        if audio_file is not None and audio_file.filename:
-            print(f"[*] Nhận file audio voice tải lên: {audio_file.filename}")
-            temp_audio_name = f"upload_audio_{uuid.uuid4()}_{audio_file.filename}"
-            temp_audio_path = VIDEO_UPLOADS_DIR / temp_audio_name
-            with open(temp_audio_path, "wb") as buffer:
-                shutil.copyfileobj(audio_file.file, buffer)
-            is_custom_uploaded_audio = True
+        # 1. Handle Multiple Voice Audio File Uploads
+        all_uploaded_audios = []
+        if audio_files:
+            all_uploaded_audios.extend([af for af in audio_files if af and af.filename])
+        if audio_file and audio_file.filename:
+            all_uploaded_audios.append(audio_file)
 
-        elif audio_id and audio_id.strip() and audio_id != "none":
-            clean_audio_id = audio_id.strip()
-            existing_audio = OUTPUTS_DIR / f"{clean_audio_id}.wav"
+        for idx, af in enumerate(all_uploaded_audios):
+            print(f"[*] Nhận file audio voice tải lên ({idx+1}/{len(all_uploaded_audios)}): {af.filename}")
+            tname = f"upload_audio_{idx}_{uuid.uuid4()}_{af.filename}"
+            tpath = VIDEO_UPLOADS_DIR / tname
+            with open(tpath, "wb") as buffer:
+                shutil.copyfileobj(af.file, buffer)
+            temp_audio_paths.append(tpath)
+            custom_uploaded_audio_paths.append(tpath)
+
+        # 2. Handle Audio IDs from TTS history
+        parsed_ids = []
+        if audio_ids and audio_ids.strip():
+            parsed_ids.extend([i.strip() for i in audio_ids.split(",") if i.strip()])
+        if audio_id and audio_id.strip() and audio_id != "none":
+            parsed_ids.append(audio_id.strip())
+
+        for aid in parsed_ids:
+            existing_audio = OUTPUTS_DIR / f"{aid}.wav"
             if existing_audio.exists():
-                print(f"[*] Sử dụng file audio từ lịch sử TTS: {clean_audio_id}.wav")
-                temp_audio_path = existing_audio
+                print(f"[*] Thêm file audio từ lịch sử TTS: {aid}.wav")
+                temp_audio_paths.append(existing_audio)
 
         # Handle Background Music (BGM) input source
         if bgm_file is not None and bgm_file.filename:
@@ -321,17 +336,17 @@ async def dub_multiple_videos(
                 shutil.copyfileobj(bgm_file.file, buffer)
             is_custom_uploaded_bgm = True
 
-        # Process video (dub, merge, bgm, strip audio)
+        # Process video (dub, merge, multi-voice, bgm, strip audio)
         result = VideoDubbingService.process_video_dubbing(
             video_paths=temp_paths,
-            audio_file_path=temp_audio_path,
+            audio_file_paths=temp_audio_paths,
             bgm_file_path=temp_bgm_path,
             bgm_volume=bgm_volume,
             remove_original_audio=remove_original_audio,
             duration_mode=duration_mode
         )
 
-        # Cleanup video temp files
+        # Cleanups
         for tp in temp_paths:
             if tp.exists():
                 try:
@@ -339,14 +354,13 @@ async def dub_multiple_videos(
                 except Exception:
                     pass
 
-        # Cleanup custom uploaded voice audio temp file
-        if is_custom_uploaded_audio and temp_audio_path and temp_audio_path.exists():
-            try:
-                os.remove(temp_audio_path)
-            except Exception:
-                pass
+        for cap in custom_uploaded_audio_paths:
+            if cap.exists():
+                try:
+                    os.remove(cap)
+                except Exception:
+                    pass
 
-        # Cleanup custom uploaded bgm temp file
         if is_custom_uploaded_bgm and temp_bgm_path and temp_bgm_path.exists():
             try:
                 os.remove(temp_bgm_path)
@@ -356,6 +370,7 @@ async def dub_multiple_videos(
         return {
             "id": result["id"],
             "has_voice": result["has_voice"],
+            "voice_count": result.get("voice_count", len(temp_audio_paths)),
             "has_bgm": result["has_bgm"],
             "bgm_volume": result["bgm_volume"],
             "duration": result["video_duration"],
@@ -374,11 +389,12 @@ async def dub_multiple_videos(
                     os.remove(tp)
                 except Exception:
                     pass
-        if is_custom_uploaded_audio and temp_audio_path and temp_audio_path.exists():
-            try:
-                os.remove(temp_audio_path)
-            except Exception:
-                pass
+        for cap in custom_uploaded_audio_paths:
+            if cap.exists():
+                try:
+                    os.remove(cap)
+                except Exception:
+                    pass
         if is_custom_uploaded_bgm and temp_bgm_path and temp_bgm_path.exists():
             try:
                 os.remove(temp_bgm_path)

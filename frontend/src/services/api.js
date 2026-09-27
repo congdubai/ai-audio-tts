@@ -156,8 +156,8 @@ export async function deleteHistoryItem(id) {
 
 export async function dubVideo(
   videoFiles,
-  audioFile = null,
-  audioId = null,
+  audioFiles = [],
+  audioIds = [],
   bgmFile = null,
   bgmVolume = 0.2,
   removeOriginalAudio = true,
@@ -170,12 +170,23 @@ export async function dubVideo(
     formData.append('videos', file);
   }
 
-  if (audioFile) {
-    formData.append('audio_file', audioFile);
-  } else if (audioId) {
-    formData.append('audio_id', audioId);
+  // Voice Audio Files
+  if (Array.isArray(audioFiles)) {
+    for (const af of audioFiles) {
+      if (af) formData.append('audio_files', af);
+    }
+  } else if (audioFiles) {
+    formData.append('audio_file', audioFiles);
   }
 
+  // Voice Audio IDs
+  if (Array.isArray(audioIds) && audioIds.length > 0) {
+    formData.append('audio_ids', audioIds.join(','));
+  } else if (typeof audioIds === 'string' && audioIds) {
+    formData.append('audio_id', audioIds);
+  }
+
+  // BGM Music File
   if (bgmFile) {
     formData.append('bgm_file', bgmFile);
     formData.append('bgm_volume', bgmVolume.toString());

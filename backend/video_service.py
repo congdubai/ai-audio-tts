@@ -41,7 +41,7 @@ class VideoDubbingService:
     def process_video_dubbing(
         cls,
         video_paths: List[Path],
-        audio_file_path: Optional[Path] = None,
+        audio_file_paths: List[Path] = [],
         bgm_file_path: Optional[Path] = None,
         bgm_volume: float = 0.2,
         remove_original_audio: bool = True,
@@ -55,23 +55,25 @@ class VideoDubbingService:
         output_filepath = VIDEO_OUTPUTS_DIR / output_filename
         ffmpeg_bin = cls.get_ffmpeg_bin()
 
-        has_voice = audio_file_path is not None and audio_file_path.exists()
+        valid_audio_paths = [ap for ap in audio_file_paths if ap and ap.exists()]
+        has_voice = len(valid_audio_paths) > 0
         has_bgm = bgm_file_path is not None and bgm_file_path.exists()
 
-        voice_dur = cls.get_video_duration(audio_file_path) if has_voice else 0.0
+        voice_dur = sum(cls.get_video_duration(ap) for ap in valid_audio_paths) if has_voice else 0.0
         bgm_dur = cls.get_video_duration(bgm_file_path) if has_bgm else 0.0
 
-        print(f"[*] Processing Video ({len(video_paths)} clips). Voice: {'Yes (' + str(voice_dur) + 's)' if has_voice else 'No'}, BGM: {'Yes (' + str(bgm_dur) + 's, vol=' + str(bgm_volume) + ')' if has_bgm else 'No'}, Mute orig: {remove_original_audio}, Mode: {duration_mode}")
+        print(f"[*] Processing Video ({len(video_paths)} video clips, {len(valid_audio_paths)} voice audio clips). Voice total: {voice_dur:.2f}s, BGM: {'Yes (' + str(bgm_dur) + 's, vol=' + str(bgm_volume) + ')' if has_bgm else 'No'}, Mute orig: {remove_original_audio}, Mode: {duration_mode}")
 
         num_vids = len(video_paths)
         inputs = []
         for vp in video_paths:
             inputs.extend(["-i", str(vp)])
 
-        voice_idx = None
+        voice_indices = []
         if has_voice:
-            voice_idx = len(inputs) // 2
-            inputs.extend(["-i", str(audio_file_path)])
+            for ap in valid_audio_paths:
+                voice_indices.append(len(inputs) // 2)
+                inputs.extend(["-i", str(ap)])
 
         bgm_idx = None
         if has_bgm:
@@ -82,11 +84,9 @@ class VideoDubbingService:
 
         # Video Filter Concat / Scale
         if num_vids == 1:
-            # Single video
             video_dur = cls.get_video_duration(video_paths[0])
             filter_parts.append("[0:v:0]null[vout];")
         else:
-            # Multi video concat
             video_dur = sum(cls.get_video_duration(vp) for vp in video_paths)
             for idx in range(num_vids):
                 filter_parts.append(
@@ -105,10 +105,20 @@ class VideoDubbingService:
         audio_mix_streams = []
 
         if has_voice:
-            if duration_mode == "loop_voice":
-                filter_parts.append(f"[{voice_idx}:a:0]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
+            if len(voice_indices) == 1:
+                idx = voice_indices[0]
+                if duration_mode == "loop_voice":
+                    filter_parts.append(f"[{idx}:a:0]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
+                else:
+                    filter_parts.append(f"[{idx}:a:0]volume=1.0,apad[a_voice];")
             else:
-                filter_parts.append(f"[{voice_idx}:a:0]volume=1.0,apad[a_voice];")
+                concat_voice_inputs = "".join([f"[{i}:a:0]" for i in voice_indices])
+                filter_parts.append(f"{concat_voice_inputs}concat=n={len(voice_indices)}:v=0:a=1[a_voice_raw];")
+                if duration_mode == "loop_voice":
+                    filter_parts.append(f"[a_voice_raw]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
+                else:
+                    filter_parts.append(f"[a_voice_raw]volume=1.0,apad[a_voice];")
+
             audio_mix_streams.append("[a_voice]")
 
         if has_bgm:
@@ -164,6 +174,7 @@ class VideoDubbingService:
         return {
             "id": video_id,
             "has_voice": has_voice,
+            "voice_count": len(valid_audio_paths),
             "has_bgm": has_bgm,
             "bgm_volume": bgm_volume,
             "voice_duration": voice_dur,
