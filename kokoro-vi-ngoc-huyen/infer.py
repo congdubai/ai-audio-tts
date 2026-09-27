@@ -113,7 +113,7 @@ def split_text(text: str) -> list[str]:
 def merge_audio_chunks(
     chunks: list[np.ndarray],
     crossfade_ms: int = DEFAULT_CROSSFADE_MS,
-    pause_ms: int = 150,
+    pause_ms: int = 140,
     micro_fade_ms: int = 8,
     min_chunk_ms: int = 120,
     edge_pad_ms: int = 25,
@@ -247,6 +247,12 @@ class KokoroVietnameseTTS:
                         progress_callback(index, total_chunks, text_chunk)
                     except Exception:
                         pass
+
+                # Thu thập TẤT CẢ audio segments mà pipeline yield cho 1 text chunk
+                # Pipeline có thể yield nhiều segment cho 1 input → nếu append riêng lẻ
+                # thì merge_audio_chunks sẽ chèn pause SAI VỊ TRÍ (giữa các segment
+                # của cùng 1 câu) → crack/nhịp sai
+                segment_audios: list[np.ndarray] = []
                 for _, phonemes, audio in self.pipeline(
                     text_chunk,
                     voice=self.voice,
@@ -256,7 +262,12 @@ class KokoroVietnameseTTS:
                     if phonemes:
                         phoneme_chunks.append(f"[{index}] {phonemes}")
                     if audio is not None:
-                        chunks.append(audio.detach().cpu().numpy())
+                        segment_audios.append(audio.detach().cpu().numpy())
+
+                # Nối các segments của cùng 1 chunk lại KHÔNG CÓ pause
+                # → pause chỉ được chèn GIỮA các text chunk khác nhau
+                if segment_audios:
+                    chunks.append(np.concatenate(segment_audios))
 
         audio = merge_audio_chunks(chunks, crossfade_ms=crossfade_ms)
         if len(audio) == 0:
