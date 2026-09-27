@@ -74,33 +74,27 @@ def split_text(text: str) -> list[str]:
         else:
             merged_chunks.append(chunk)
 
-    # 2. Hướng B: Giữ nguyên câu hoàn chỉnh, chỉ gộp fragment và câu cực ngắn
-    #    - Câu hoàn chỉnh (kết thúc .!?) và đủ dài (≥25 ký tự) → giữ riêng
-    #    - Fragment (không kết thúc .!?) → gộp vào câu tiếp
-    #    - Câu cực ngắn (<25 ký tự, dù có dấu câu) → gộp vào câu sau
+    # 2. Hướng B: mọi câu hoàn chỉnh (kết thúc .!?…) đều là chunk riêng
+    #    → mỗi câu ngắn được hưởng khoảng nghỉ pause_ms khi ghép → nhịp đọc tự nhiên
+    #    Chỉ gộp fragment (chưa có dấu kết thúc câu) vào câu tiếp theo
     _SENTENCE_END = re.compile(r"[.!?…]+\s*$")
-    MIN_STANDALONE = 25  # ký tự tối thiểu để một câu đứng độc lập
 
     grouped: list[str] = []
-    pending = ""  # fragment chưa hoàn chỉnh, chờ gộp vào câu tiếp
+    pending = ""  # fragment chưa có dấu câu kết thúc
 
     for chunk in merged_chunks:
-        is_complete = bool(_SENTENCE_END.search(chunk))
-        is_long_enough = len(chunk) >= MIN_STANDALONE
-
         if pending:
-            # Có fragment đang chờ → gộp vào đầu chunk hiện tại
             chunk = f"{pending} {chunk}".strip()
             pending = ""
 
-        if is_complete and is_long_enough:
-            # Câu hoàn chỉnh, đủ dài → giữ riêng để bảo toàn intonation
+        if _SENTENCE_END.search(chunk):
+            # Câu hoàn chỉnh → giữ riêng, bất kể ngắn hay dài
             grouped.append(chunk)
         else:
-            # Fragment hoặc câu quá ngắn → chờ gộp vào câu tiếp
+            # Fragment chưa kết thúc → chờ gộp vào câu tiếp
             pending = chunk
 
-    # Nếu còn pending cuối cùng mà không có câu tiếp → gộp vào câu cuối hoặc thêm mới
+    # Fragment cuối không có câu tiếp → gộp vào câu cuối hoặc thêm mới
     if pending:
         if grouped:
             grouped[-1] = f"{grouped[-1]} {pending}".strip()
