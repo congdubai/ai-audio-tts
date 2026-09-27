@@ -107,8 +107,10 @@ def split_text(text: str) -> list[str]:
 def merge_audio_chunks(
     chunks: list[np.ndarray],
     crossfade_ms: int = DEFAULT_CROSSFADE_MS,
-    pause_ms: int = 200,
+    pause_ms: int = 150,
     micro_fade_ms: int = 8,
+    min_chunk_ms: int = 120,
+    edge_pad_ms: int = 25,
 ) -> np.ndarray:
     valid_chunks = [np.asarray(chunk, dtype=np.float32) for chunk in chunks if len(chunk) > 0]
     if not valid_chunks:
@@ -118,9 +120,17 @@ def merge_audio_chunks(
     pause_samples = int(SAMPLE_RATE * pause_ms / 1000)
     silence = np.zeros(pause_samples, dtype=np.float32)
 
+    min_chunk_samples = int(SAMPLE_RATE * min_chunk_ms / 1000)
+    edge_pad_samples = int(SAMPLE_RATE * edge_pad_ms / 1000)
+    silence_pad = np.zeros(edge_pad_samples, dtype=np.float32)
+
     processed_chunks: list[np.ndarray] = []
     for chunk in valid_chunks:
         c = chunk.copy()
+        # Pad chunk quá ngắn với silence ở 2 đầu trước khi fade
+        # → tránh fade chiếm quá nhiều % tổng audio → crack/click tại điểm nối
+        if len(c) < min_chunk_samples:
+            c = np.concatenate([silence_pad, c, silence_pad])
         n = len(c)
         actual_fade = min(fade_samples, n // 4)
         if actual_fade > 0:
