@@ -161,7 +161,9 @@ export async function dubVideo(
   bgmFile = null,
   bgmVolume = 0.2,
   removeOriginalAudio = true,
-  durationMode = 'full_video'
+  durationMode = 'full_video',
+  aspectRatio = '9:16',
+  fitMode = 'blur_bg'
 ) {
   const formData = new FormData();
 
@@ -194,6 +196,8 @@ export async function dubVideo(
 
   formData.append('remove_original_audio', removeOriginalAudio ? 'true' : 'false');
   formData.append('duration_mode', durationMode);
+  formData.append('aspect_ratio', aspectRatio);
+  formData.append('fit_mode', fitMode);
 
   const res = await fetch(`${API_BASE_URL}/api/video/dub`, {
     method: 'POST',

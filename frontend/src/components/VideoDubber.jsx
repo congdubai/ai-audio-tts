@@ -19,7 +19,10 @@ import {
   FileAudio,
   ListMusic,
   Disc,
-  Gauge
+  Gauge,
+  Smartphone,
+  Tv,
+  Square
 } from 'lucide-react';
 import { dubVideo, fetchHistory } from '../services/api';
 
@@ -42,6 +45,8 @@ export default function VideoDubber({ showToast, currentAudio }) {
   // Processing Options
   const [removeOriginalAudio, setRemoveOriginalAudio] = useState(true);
   const [durationMode, setDurationMode] = useState('full_video'); // 'full_video' | 'match_voice' | 'loop_voice'
+  const [aspectRatio, setAspectRatio] = useState('9:16'); // Default 9:16 vertical TikTok/Reels!
+  const [fitMode, setFitMode] = useState('blur_bg'); // 'blur_bg' | 'pad_black'
 
   // Execution States
   const [isLoading, setIsLoading] = useState(false);
@@ -269,21 +274,13 @@ export default function VideoDubber({ showToast, currentAudio }) {
         bgmFile,
         bgmVolume,
         removeOriginalAudio,
-        durationMode
+        durationMode,
+        aspectRatio,
+        fitMode
       );
       setDubbedResult(result);
 
-      if (voicePlaylist.length > 0 && bgmFile) {
-        showToast(`Đã nối ${voicePlaylist.length} giọng đọc & ghép vào Video thành công!`, 'success');
-      } else if (voicePlaylist.length > 0) {
-        showToast(`Đã nối ${voicePlaylist.length} giọng đọc vào Video thành công!`, 'success');
-      } else if (bgmFile) {
-        showToast(`Đã ghép Video + Nhạc Nền thành công!`, 'success');
-      } else if (removeOriginalAudio) {
-        showToast(`Đã xóa âm thanh gốc của ${videoFiles.length} video!`, 'success');
-      } else {
-        showToast(`Đã nối ${videoFiles.length} video thành công!`, 'success');
-      }
+      showToast(`Đã xuất Video Dọc ${aspectRatio} thành công!`, 'success');
     } catch (error) {
       console.error('Video process error:', error);
       showToast(error.message || 'Lỗi khi xử lý video', 'error');
@@ -710,18 +707,88 @@ export default function VideoDubber({ showToast, currentAudio }) {
           )}
         </div>
 
-        {/* Section 4: Output Options & Run */}
+        {/* Section 4: Output Options & Format Selection */}
         <div className="card" style={{ marginTop: '20px' }}>
           <div className="card-header">
             <div className="card-title-group">
               <Sparkles size={20} className="card-header-icon" />
-              <h2 className="card-title">4. Xử Lý & Xuất Video</h2>
+              <h2 className="card-title">4. Chọn Định Dạng Khung Hình & Xuất Video</h2>
             </div>
           </div>
 
           <div className="controls-panel">
+            {/* Aspect Ratio Selection (Vertical 9:16 TikTok / Reels / Shorts default) */}
+            <div className="duration-mode-box">
+              <span className="duration-mode-title" style={{ color: '#a855f7', fontWeight: 600 }}>
+                📱 Tỉ lệ khung hình Video xuất ra:
+              </span>
+              <div className="duration-options-list">
+                <label className={`duration-option-pill ${aspectRatio === '9:16' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="aspect_ratio"
+                    value="9:16"
+                    checked={aspectRatio === '9:16'}
+                    onChange={() => setAspectRatio('9:16')}
+                  />
+                  <span>📱 Video Dọc 9:16 (1080x1920 - TikTok / Reels / Shorts)</span>
+                </label>
+
+                <label className={`duration-option-pill ${aspectRatio === '16:9' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="aspect_ratio"
+                    value="16:9"
+                    checked={aspectRatio === '16:9'}
+                    onChange={() => setAspectRatio('16:9')}
+                  />
+                  <span>🎬 Video Ngang 16:9 (1920x1080 - YouTube)</span>
+                </label>
+
+                <label className={`duration-option-pill ${aspectRatio === '1:1' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="aspect_ratio"
+                    value="1:1"
+                    checked={aspectRatio === '1:1'}
+                    onChange={() => setAspectRatio('1:1')}
+                  />
+                  <span>🔳 Video Vuông 1:1 (1080x1080 - Instagram Post)</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Fit mode option (Blur background vs Black bars) */}
+            <div className="duration-mode-box" style={{ marginTop: '12px' }}>
+              <span className="duration-mode-title">Kiểu khung nền bổ sung:</span>
+              <div className="duration-options-list">
+                <label className={`duration-option-pill ${fitMode === 'blur_bg' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="fit_mode"
+                    value="blur_bg"
+                    checked={fitMode === 'blur_bg'}
+                    onChange={() => setFitMode('blur_bg')}
+                  />
+                  <span>✨ Nền mờ nghệ thuật (Blur Background - Khuyên dùng cho TikTok)</span>
+                </label>
+
+                <label className={`duration-option-pill ${fitMode === 'pad_black' ? 'active' : ''}`}>
+                  <input
+                    type="radio"
+                    name="fit_mode"
+                    value="pad_black"
+                    checked={fitMode === 'pad_black'}
+                    onChange={() => setFitMode('pad_black')}
+                  />
+                  <span>⬛ Viền đen chuẩn (Black Padding)</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Duration Mode options */}
             {(voicePlaylist.length > 0 || bgmFile) && (
-              <div className="duration-mode-box">
+              <div className="duration-mode-box" style={{ marginTop: '12px' }}>
                 <span className="duration-mode-title">Chế độ khớp độ dài video:</span>
                 <div className="duration-options-list">
                   <label className={`duration-option-pill ${durationMode === 'full_video' ? 'active' : ''}`}>
@@ -784,21 +851,13 @@ export default function VideoDubber({ showToast, currentAudio }) {
               {isLoading ? (
                 <>
                   <Loader2 size={20} className="spin-icon" />
-                  <span>Đang hòa âm & xử lý video bằng FFmpeg...</span>
+                  <span>Đang xuất Video Dọc 9:16 ({aspectRatio})...</span>
                 </>
               ) : (
                 <>
                   <Sparkles size={20} />
                   <span>
-                    {voicePlaylist.length > 0 && bgmFile
-                      ? `✨ Nối ${voicePlaylist.length} Giọng Đọc + Nhạc Nền + Video (.MP4)`
-                      : voicePlaylist.length > 0
-                      ? `✨ Nối ${voicePlaylist.length} Giọng Đọc + Video (.MP4)`
-                      : bgmFile
-                      ? `✨ Ghép Video + Nhạc Nền (.MP4)`
-                      : removeOriginalAudio
-                      ? `✂️ Xóa Âm Thanh Gốc Video (.MP4)`
-                      : `🎬 Nối Các Clip Video (.MP4)`}
+                    📱 Xuất Video Dọc 9:16 (1080x1920 - TikTok/Reels)
                   </span>
                 </>
               )}
@@ -827,33 +886,32 @@ export default function VideoDubber({ showToast, currentAudio }) {
               </a>
             </div>
 
-            {/* Result Video Player */}
-            <div className="dubbed-video-container">
+            {/* Result Video Player (Vertical ratio preview box) */}
+            <div className="dubbed-video-container" style={{ aspectRatio: dubbedResult.aspect_ratio === '9:16' ? '9/16' : 'auto', maxHeight: '560px', margin: '0 auto', display: 'flex', justifyContent: 'center' }}>
               <video
                 src={dubbedResult.fullVideoUrl}
                 controls
                 autoPlay
                 className="dubbed-video-player"
+                style={{ maxHeight: '560px', objectFit: 'contain' }}
               />
             </div>
 
             <div className="meta-tags-container">
+              <span className="meta-pill" style={{ background: 'rgba(168,85,247,0.15)', color: '#c084fc', border: '1px solid rgba(168,85,247,0.3)' }}>
+                📱 Tỉ lệ: {dubbedResult.aspect_ratio || aspectRatio} ({dubbedResult.resolution || '1080x1920'})
+              </span>
               <span className="meta-pill">
                 <Clock size={14} /> Thời lượng: {dubbedResult.duration}s
               </span>
               {dubbedResult.has_voice && (
                 <span className="meta-pill">
-                  🎙️ Đã nối {dubbedResult.voice_count || 1} file giọng đọc
+                  🎙️ Giọng đọc: {dubbedResult.voice_count || 1} file
                 </span>
               )}
               {dubbedResult.has_bgm && (
                 <span className="meta-pill">
                   🎵 Nhạc nền ({Math.round((dubbedResult.bgm_volume || 0.2) * 100)}%)
-                </span>
-              )}
-              {dubbedResult.video_count && (
-                <span className="meta-pill">
-                  Số clip đã nối: {dubbedResult.video_count}
                 </span>
               )}
               <span className="meta-pill">
@@ -865,10 +923,10 @@ export default function VideoDubber({ showToast, currentAudio }) {
           <div className="card player-card placeholder">
             <div className="placeholder-content">
               <div className="placeholder-pulse">
-                <Film size={36} className="placeholder-icon" />
+                <Smartphone size={40} className="placeholder-icon" style={{ color: '#a855f7' }} />
               </div>
-              <h3>Xem trước Video kết quả</h3>
-              <p>Tải lên 1 hoặc nhiều video, thêm danh sách các giọng đọc & nhạc nền rồi bấm xử lý để xem và tải về</p>
+              <h3>Xem trước Video Dọc 9:16</h3>
+              <p>Tải lên video, chọn giọng đọc & nhạc nền rồi bấm xử lý để xuất video dọc TikTok / Reels (1080x1920)</p>
             </div>
           </div>
         )}

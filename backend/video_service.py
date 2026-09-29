@@ -45,7 +45,9 @@ class VideoDubbingService:
         bgm_file_path: Optional[Path] = None,
         bgm_volume: float = 0.2,
         remove_original_audio: bool = True,
-        duration_mode: str = "full_video"  # "full_video" | "match_voice" | "loop_voice"
+        duration_mode: str = "full_video",  # "full_video" | "match_voice" | "loop_voice"
+        aspect_ratio: str = "9:16",  # "9:16" (TikTok 1080x1920) | "16:9" | "1:1"
+        fit_mode: str = "blur_bg"  # "blur_bg" | "pad_black"
     ) -> Dict[str, Any]:
         if not video_paths:
             raise ValueError("Cần ít nhất một file video để xử lý.")
@@ -61,8 +63,6 @@ class VideoDubbingService:
 
         voice_dur = sum(cls.get_video_duration(ap) for ap in valid_audio_paths) if has_voice else 0.0
         bgm_dur = cls.get_video_duration(bgm_file_path) if has_bgm else 0.0
-
-        print(f"[*] Processing Video ({len(video_paths)} video clips, {len(valid_audio_paths)} voice audio clips). Voice total: {voice_dur:.2f}s, BGM: {'Yes (' + str(bgm_dur) + 's, vol=' + str(bgm_volume) + ')' if has_bgm else 'No'}, Mute orig: {remove_original_audio}, Mode: {duration_mode}")
 
         num_vids = len(video_paths)
         inputs = []
@@ -82,6 +82,14 @@ class VideoDubbingService:
 
         video_dur = sum(cls.get_video_duration(vp) for vp in video_paths)
 
+        # Determine target resolution based on aspect_ratio
+        if aspect_ratio == "9:16":
+            target_w, target_h = 1080, 1920
+        elif aspect_ratio == "1:1":
+            target_w, target_h = 1080, 1080
+        else:
+            target_w, target_h = 1920, 1080
+
         # Determine target duration
         if duration_mode == "match_voice" and has_voice and voice_dur > 0:
             target_dur = voice_dur
@@ -91,148 +99,102 @@ class VideoDubbingService:
         filter_parts = []
         audio_mix_streams = []
 
-        # SINGLE VIDEO CASE: OPTIMIZED FOR LIGHTNING FAST STREAM COPY (-c:v copy)
+        print(f"[*] Processing Video ({num_vids} clips). Aspect ratio: {aspect_ratio} ({target_w}x{target_h}, fit={fit_mode}). Voice total: {voice_dur:.2f}s, BGM: {'Yes (' + str(bgm_dur) + 's)' if has_bgm else 'No'}")
+
+        # Construct Video Scaling Filter
         if num_vids == 1:
-            if has_voice:
-                if len(voice_indices) == 1:
-                    idx = voice_indices[0]
-                    if duration_mode == "loop_voice":
-                        filter_parts.append(f"[{idx}:a:0]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
-                    else:
-                        filter_parts.append(f"[{idx}:a:0]volume=1.0,apad[a_voice];")
-                else:
-                    concat_voice_inputs = "".join([f"[{i}:a:0]" for i in voice_indices])
-                    filter_parts.append(f"{concat_voice_inputs}concat=n={len(voice_indices)}:v=0:a=1[a_voice_raw];")
-                    if duration_mode == "loop_voice":
-                        filter_parts.append(f"[a_voice_raw]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
-                    else:
-                        filter_parts.append(f"[a_voice_raw]volume=1.0,apad[a_voice];")
-                audio_mix_streams.append("[a_voice]")
-
-            if has_bgm:
-                filter_parts.append(f"[{bgm_idx}:a:0]volume={bgm_volume:.2f},aloop=loop=-1:size=2147483647,apad[a_bgm];")
-                audio_mix_streams.append("[a_bgm]")
-
-            if not remove_original_audio:
-                filter_parts.append("[0:a:0]volume=1.0[a_orig];")
-                audio_mix_streams.append("[a_orig]")
-
-            has_final_audio = len(audio_mix_streams) > 0
-            if len(audio_mix_streams) >= 2:
-                streams_str = "".join(audio_mix_streams)
-                filter_parts.append(f"{streams_str}amix=inputs={len(audio_mix_streams)}:duration=first:normalize=0[aout]")
-            elif len(audio_mix_streams) == 1:
-                filter_parts.append(f"{audio_mix_streams[0]}anull[aout]")
-
-            full_filter = "".join(filter_parts)
-            time_args = ["-t", str(target_dur)] if target_dur > 0 else []
-
-            # Stream copy video track (-c:v copy) for ~0.5s execution speed!
-            cmd_fast = [
-                ffmpeg_bin, "-y",
-                "-threads", "0",
-                *inputs,
-                *(["-filter_complex", full_filter] if has_final_audio else []),
-                "-map", "0:v:0",
-                *(["-map", "[aout]"] if has_final_audio else ["-an"]),
-                "-c:v", "copy",
-                *(["-c:a", "aac", "-b:a", "192k"] if has_final_audio else []),
-                *time_args,
-                "-shortest",
-                str(output_filepath)
-            ]
-
-            print("[*] Running FAST Stream Copy (cực nhanh ~0.5s, 100% giữ nguyên chất lượng video gốc)...")
-            res_fast = subprocess.run(cmd_fast, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
-            if res_fast.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
-                print("[!] Stream copy không tương thích với codec, chuyển sang mã hóa ultrafast...")
-                cmd_fallback = [
-                    ffmpeg_bin, "-y",
-                    "-threads", "0",
-                    *inputs,
-                    *(["-filter_complex", full_filter] if has_final_audio else []),
-                    "-map", "0:v:0",
-                    *(["-map", "[aout]"] if has_final_audio else ["-an"]),
-                    "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-                    *(["-c:a", "aac", "-b:a", "192k"] if has_final_audio else []),
-                    *time_args,
-                    "-shortest",
-                    str(output_filepath)
-                ]
-                res_fallback = subprocess.run(cmd_fallback, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                if res_fallback.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
-                    raise RuntimeError(f"FFmpeg error: {res_fallback.stderr}")
-
-        # MULTI VIDEO CONCAT CASE
-        else:
-            print(f"[*] Dang ghep noi {num_vids} video...")
-            for idx in range(num_vids):
+            if fit_mode == "blur_bg":
                 filter_parts.append(
-                    f"[{idx}:v:0]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-ih)/2:(oh-ih)/2,setsar=1,fps=30[v{idx}];"
+                    f"[0:v:0]split[bg0][fg0];"
+                    f"[bg0]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},boxblur=20:5[bgblur0];"
+                    f"[fg0]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease[fgscaled0];"
+                    f"[bgblur0][fgscaled0]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[vout];"
                 )
+            else:
+                filter_parts.append(
+                    f"[0:v:0]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30[vout];"
+                )
+        else:
+            for idx in range(num_vids):
+                if fit_mode == "blur_bg":
+                    filter_parts.append(
+                        f"[{idx}:v:0]split[bg{idx}][fg{idx}];"
+                        f"[bg{idx}]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},boxblur=20:5[bgblur{idx}];"
+                        f"[fg{idx}]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease[fgscaled{idx}];"
+                        f"[bgblur{idx}][fgscaled{idx}]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[v{idx}];"
+                    )
+                else:
+                    filter_parts.append(
+                        f"[{idx}:v:0]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30[v{idx}];"
+                    )
             concat_v = "".join([f"[v{i}]" for i in range(num_vids)])
             filter_parts.append(f"{concat_v}concat=n={num_vids}:v=1:a=0[vout];")
 
-            if has_voice:
-                if len(voice_indices) == 1:
-                    idx = voice_indices[0]
-                    if duration_mode == "loop_voice":
-                        filter_parts.append(f"[{idx}:a:0]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
-                    else:
-                        filter_parts.append(f"[{idx}:a:0]volume=1.0,apad[a_voice];")
+        # Voice audio stream filter
+        if has_voice:
+            if len(voice_indices) == 1:
+                idx = voice_indices[0]
+                if duration_mode == "loop_voice":
+                    filter_parts.append(f"[{idx}:a:0]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
                 else:
-                    concat_voice_inputs = "".join([f"[{i}:a:0]" for i in voice_indices])
-                    filter_parts.append(f"{concat_voice_inputs}concat=n={len(voice_indices)}:v=0:a=1[a_voice_raw];")
-                    if duration_mode == "loop_voice":
-                        filter_parts.append(f"[a_voice_raw]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
-                    else:
-                        filter_parts.append(f"[a_voice_raw]volume=1.0,apad[a_voice];")
-                audio_mix_streams.append("[a_voice]")
+                    filter_parts.append(f"[{idx}:a:0]volume=1.0,apad[a_voice];")
+            else:
+                concat_voice_inputs = "".join([f"[{i}:a:0]" for i in voice_indices])
+                filter_parts.append(f"{concat_voice_inputs}concat=n={len(voice_indices)}:v=0:a=1[a_voice_raw];")
+                if duration_mode == "loop_voice":
+                    filter_parts.append(f"[a_voice_raw]volume=1.0,aloop=loop=-1:size=2147483647,apad[a_voice];")
+                else:
+                    filter_parts.append(f"[a_voice_raw]volume=1.0,apad[a_voice];")
+            audio_mix_streams.append("[a_voice]")
 
-            if has_bgm:
-                filter_parts.append(f"[{bgm_idx}:a:0]volume={bgm_volume:.2f},aloop=loop=-1:size=2147483647,apad[a_bgm];")
-                audio_mix_streams.append("[a_bgm]")
+        # BGM audio stream filter
+        if has_bgm:
+            filter_parts.append(f"[{bgm_idx}:a:0]volume={bgm_volume:.2f},aloop=loop=-1:size=2147483647,apad[a_bgm];")
+            audio_mix_streams.append("[a_bgm]")
 
-            if not remove_original_audio:
+        # Original video audio stream filter
+        if not remove_original_audio:
+            if num_vids == 1:
+                filter_parts.append("[0:a:0]volume=1.0[a_orig];")
+            else:
                 concat_a = "".join([f"[{i}:a:0]" for i in range(num_vids)])
                 filter_parts.append(f"{concat_a}concat=n={num_vids}:v=0:a=1[a_orig];")
-                audio_mix_streams.append("[a_orig]")
+            audio_mix_streams.append("[a_orig]")
 
-            has_final_audio = len(audio_mix_streams) > 0
-            if len(audio_mix_streams) >= 2:
-                streams_str = "".join(audio_mix_streams)
-                filter_parts.append(f"{streams_str}amix=inputs={len(audio_mix_streams)}:duration=first:normalize=0[aout]")
-            elif len(audio_mix_streams) == 1:
-                filter_parts.append(f"{audio_mix_streams[0]}anull[aout]")
+        has_final_audio = len(audio_mix_streams) > 0
+        if len(audio_mix_streams) >= 2:
+            streams_str = "".join(audio_mix_streams)
+            filter_parts.append(f"{streams_str}amix=inputs={len(audio_mix_streams)}:duration=first:normalize=0[aout]")
+        elif len(audio_mix_streams) == 1:
+            filter_parts.append(f"{audio_mix_streams[0]}anull[aout]")
 
-            full_filter = "".join(filter_parts)
-            time_args = ["-t", str(target_dur)] if target_dur > 0 else []
+        full_filter = "".join(filter_parts)
+        time_args = ["-t", str(target_dur)] if target_dur > 0 else []
 
-            cmd_multi = [
-                ffmpeg_bin, "-y",
-                "-threads", "0",
-                *inputs,
-                "-filter_complex", full_filter,
-                "-map", "[vout]",
-                *(["-map", "[aout]"] if has_final_audio else ["-an"]),
-                "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-                *(["-c:a", "aac", "-b:a", "192k"] if has_final_audio else []),
-                *time_args,
-                "-shortest",
-                str(output_filepath)
-            ]
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-threads", "0",
+            *inputs,
+            "-filter_complex", full_filter,
+            "-map", "[vout]",
+            *(["-map", "[aout]"] if has_final_audio else ["-an"]),
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            *(["-c:a", "aac", "-b:a", "192k"] if has_final_audio else []),
+            *time_args,
+            "-shortest",
+            str(output_filepath)
+        ]
 
-            res_multi = subprocess.run(cmd_multi, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            if res_multi.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
-                raise RuntimeError(f"FFmpeg multi video error: {res_multi.stderr}")
+        print(f"[*] Running FFmpeg 9:16 vertical encoding command ({target_w}x{target_h})...")
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-        if not output_filepath.exists() or output_filepath.stat().st_size == 0:
-            raise RuntimeError("Tạo file video thất bại.")
+        if res.returncode != 0 or not output_filepath.exists() or output_filepath.stat().st_size == 0:
+            print(f"[!] FFmpeg error output:\n{res.stderr}")
+            raise RuntimeError(f"FFmpeg process failed: {res.stderr}")
 
         file_size = output_filepath.stat().st_size
         final_duration = cls.get_video_duration(output_filepath)
-        print(f"[OK] Video processing complete! Output: {output_filename} ({round(file_size / (1024*1024), 2)} MB, {final_duration:.2f}s)")
+        print(f"[OK] 9:16 Vertical Video complete! Output: {output_filename} ({round(file_size / (1024*1024), 2)} MB, {final_duration:.2f}s, {target_w}x{target_h})")
 
         return {
             "id": video_id,
@@ -246,5 +208,7 @@ class VideoDubbingService:
             "video_duration": final_duration,
             "video_count": num_vids,
             "duration_mode": duration_mode,
-            "remove_original_audio": remove_original_audio
+            "remove_original_audio": remove_original_audio,
+            "aspect_ratio": aspect_ratio,
+            "resolution": f"{target_w}x{target_h}"
         }

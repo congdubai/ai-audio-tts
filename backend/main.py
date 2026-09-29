@@ -64,7 +64,7 @@ async def health_check():
         "device": engine.device,
         "model": "Kokoro Vietnamese TTS (dinhthuan/kokoro-vi-ngoc-huyen)",
         "voice": "Ngọc Huyền (Vietnamese)",
-        "features": ["text-to-speech", "video-dubbing", "multi-video-concat", "multi-voice-concat", "video-audio-merge", "strip-audio", "background-music", "video-progress-stream"]
+        "features": ["text-to-speech", "video-dubbing", "multi-video-concat", "multi-voice-concat", "video-audio-merge", "strip-audio", "background-music", "vertical-9-16-video"]
     }
 
 # ==================== TTS Endpoints ====================
@@ -268,176 +268,6 @@ async def delete_history(audio_id: str):
 
 # ==================== Multi-Video Dubbing & Processing Endpoints ====================
 
-@app.post("/api/video/dub-stream")
-async def dub_multiple_videos_stream(
-    videos: List[UploadFile] = File(...),
-    audio_files: Optional[List[UploadFile]] = File(None),
-    audio_file: Optional[UploadFile] = File(None),
-    audio_id: Optional[str] = Form(None),
-    audio_ids: Optional[str] = Form(None),
-    bgm_file: Optional[UploadFile] = File(None),
-    bgm_volume: float = Form(0.2),
-    remove_original_audio: bool = Form(True),
-    duration_mode: str = Form("full_video")
-):
-    async def event_generator():
-        queue = asyncio.Queue()
-        loop = asyncio.get_running_loop()
-
-        def progress_cb(pct: int, msg: str):
-            loop.call_soon_threadsafe(
-                queue.put_nowait,
-                {
-                    "type": "progress",
-                    "percent": pct,
-                    "message": msg
-                }
-            )
-
-        def run_video_dub():
-            temp_paths: List[Path] = []
-            temp_audio_paths: List[Path] = []
-            custom_uploaded_audio_paths: List[Path] = []
-            temp_bgm_path: Optional[Path] = None
-            is_custom_uploaded_bgm = False
-
-            try:
-                if not videos or len(videos) == 0:
-                    raise ValueError("Vui lòng tải lên ít nhất 1 video.")
-
-                progress_cb(5, "Đang khởi tạo các file tải lên...")
-
-                # Save video uploads
-                for idx, video in enumerate(videos):
-                    temp_filename = f"upload_{idx}_{uuid.uuid4()}_{video.filename}"
-                    temp_path = VIDEO_UPLOADS_DIR / temp_filename
-                    with open(temp_path, "wb") as buffer:
-                        shutil.copyfileobj(video.file, buffer)
-                    temp_paths.append(temp_path)
-
-                # 1. Handle Voice Audio Files
-                all_uploaded_audios = []
-                if audio_files:
-                    all_uploaded_audios.extend([af for af in audio_files if af and af.filename])
-                if audio_file and audio_file.filename:
-                    all_uploaded_audios.append(audio_file)
-
-                for idx, af in enumerate(all_uploaded_audios):
-                    tname = f"upload_audio_{idx}_{uuid.uuid4()}_{af.filename}"
-                    tpath = VIDEO_UPLOADS_DIR / tname
-                    with open(tpath, "wb") as buffer:
-                        shutil.copyfileobj(af.file, buffer)
-                    temp_audio_paths.append(tpath)
-                    custom_uploaded_audio_paths.append(tpath)
-
-                # 2. Handle Audio IDs from TTS history
-                parsed_ids = []
-                if audio_ids and audio_ids.strip():
-                    parsed_ids.extend([i.strip() for i in audio_ids.split(",") if i.strip()])
-                if audio_id and audio_id.strip() and audio_id != "none":
-                    parsed_ids.append(audio_id.strip())
-
-                for aid in parsed_ids:
-                    existing_audio = OUTPUTS_DIR / f"{aid}.wav"
-                    if existing_audio.exists():
-                        temp_audio_paths.append(existing_audio)
-
-                # Handle BGM
-                if bgm_file is not None and bgm_file.filename:
-                    temp_bgm_name = f"upload_bgm_{uuid.uuid4()}_{bgm_file.filename}"
-                    temp_bgm_path = VIDEO_UPLOADS_DIR / temp_bgm_name
-                    with open(temp_bgm_path, "wb") as buffer:
-                        shutil.copyfileobj(bgm_file.file, buffer)
-                    is_custom_uploaded_bgm = True
-
-                # Call VideoDubbingService
-                result = VideoDubbingService.process_video_dubbing(
-                    video_paths=temp_paths,
-                    audio_file_paths=temp_audio_paths,
-                    bgm_file_path=temp_bgm_path,
-                    bgm_volume=bgm_volume,
-                    remove_original_audio=remove_original_audio,
-                    duration_mode=duration_mode,
-                    progress_callback=progress_cb
-                )
-
-                # Cleanup
-                for tp in temp_paths:
-                    if tp.exists():
-                        try:
-                            os.remove(tp)
-                        except Exception:
-                            pass
-
-                for cap in custom_uploaded_audio_paths:
-                    if cap.exists():
-                        try:
-                            os.remove(cap)
-                        except Exception:
-                            pass
-
-                if is_custom_uploaded_bgm and temp_bgm_path and temp_bgm_path.exists():
-                    try:
-                        os.remove(temp_bgm_path)
-                    except Exception:
-                        pass
-
-                return result
-
-            except Exception as e:
-                for tp in temp_paths:
-                    if tp.exists():
-                        try:
-                            os.remove(tp)
-                        except Exception:
-                            pass
-                for cap in custom_uploaded_audio_paths:
-                    if cap.exists():
-                        try:
-                            os.remove(cap)
-                        except Exception:
-                            pass
-                if is_custom_uploaded_bgm and temp_bgm_path and temp_bgm_path.exists():
-                    try:
-                        os.remove(temp_bgm_path)
-                    except Exception:
-                        pass
-                raise e
-
-        future = loop.run_in_executor(None, run_video_dub)
-
-        while not future.done():
-            try:
-                msg = await asyncio.wait_for(queue.get(), timeout=0.08)
-                yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-            except asyncio.TimeoutError:
-                pass
-
-        while not queue.empty():
-            msg = queue.get_nowait()
-            yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-
-        try:
-            result = await future
-            response_data = {
-                "id": result["id"],
-                "has_voice": result["has_voice"],
-                "voice_count": result.get("voice_count", 0),
-                "has_bgm": result["has_bgm"],
-                "bgm_volume": result["bgm_volume"],
-                "duration": result["video_duration"],
-                "video_url": f"/api/video/stream/{result['id']}",
-                "download_url": f"/api/video/download/{result['id']}",
-                "file_size": result["file_size"],
-                "video_count": result.get("video_count", len(videos)),
-                "remove_original_audio": result["remove_original_audio"]
-            }
-            yield f"data: {json.dumps({'type': 'complete', 'percent': 100, 'result': response_data}, ensure_ascii=False)}\n\n"
-        except Exception as err:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(err)}, ensure_ascii=False)}\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
-
 @app.post("/api/video/dub")
 async def dub_multiple_videos(
     videos: List[UploadFile] = File(...),
@@ -448,7 +278,9 @@ async def dub_multiple_videos(
     bgm_file: Optional[UploadFile] = File(None),
     bgm_volume: float = Form(0.2),
     remove_original_audio: bool = Form(True),
-    duration_mode: str = Form("full_video")  # "full_video" | "match_voice" | "loop_voice"
+    duration_mode: str = Form("full_video"),  # "full_video" | "match_voice" | "loop_voice"
+    aspect_ratio: str = Form("9:16"),  # "9:16" (TikTok 1080x1920) | "16:9" | "1:1"
+    fit_mode: str = Form("blur_bg")  # "blur_bg" | "pad_black"
 ):
     temp_paths: List[Path] = []
     temp_audio_paths: List[Path] = []
@@ -510,7 +342,9 @@ async def dub_multiple_videos(
             bgm_file_path=temp_bgm_path,
             bgm_volume=bgm_volume,
             remove_original_audio=remove_original_audio,
-            duration_mode=duration_mode
+            duration_mode=duration_mode,
+            aspect_ratio=aspect_ratio,
+            fit_mode=fit_mode
         )
 
         # Cleanups
@@ -545,7 +379,9 @@ async def dub_multiple_videos(
             "download_url": f"/api/video/download/{result['id']}",
             "file_size": result["file_size"],
             "video_count": result.get("video_count", len(videos)),
-            "remove_original_audio": result["remove_original_audio"]
+            "remove_original_audio": result["remove_original_audio"],
+            "aspect_ratio": result.get("aspect_ratio", aspect_ratio),
+            "resolution": result.get("resolution", "1080x1920")
         }
 
     except Exception as e:
