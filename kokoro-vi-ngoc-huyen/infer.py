@@ -81,7 +81,8 @@ def split_text(text: str) -> list[str]:
     # Câu 1-2 từ ("À.", "Chào.") không đủ context → model sinh transient cứng → crack.
     # Gộp vào câu kề giúp model đọc trong context đầy đủ hơn.
     _SENTENCE_END = re.compile(r"[.!?…]+\s*$")
-    MIN_STANDALONE = 10  # ký tự tối thiểu để câu đứng riêng thành 1 chunk
+    MIN_STANDALONE_CHARS = 25
+    MIN_STANDALONE_WORDS = 4
 
     grouped: list[str] = []
     pending = ""  # fragment chưa hoàn chỉnh hoặc quá ngắn
@@ -92,7 +93,10 @@ def split_text(text: str) -> list[str]:
             pending = ""
 
         is_complete = bool(_SENTENCE_END.search(chunk))
-        is_long_enough = len(chunk) >= MIN_STANDALONE
+        is_long_enough = (
+            len(chunk) >= MIN_STANDALONE_CHARS
+            and len(chunk.split()) >= MIN_STANDALONE_WORDS
+        )
 
         if is_complete and is_long_enough:
             # Câu hoàn chỉnh, đủ dài → chunk riêng, hưởng pause_ms giữa các câu
@@ -111,64 +115,77 @@ def split_text(text: str) -> list[str]:
     return grouped
 
 
+def _raised_cosine(n: int, rising: bool) -> np.ndarray:
+    x = np.linspace(0.0, 1.0, n, dtype=np.float32)
+    w = 0.5 * (1.0 - np.cos(np.pi * x))
+    return w if rising else w[::-1]
+
+
+def _trim_and_snap(c: np.ndarray, thresh: float = 0.01,
+                   keep_ms: int = 10, snap_ms: int = 5) -> np.ndarray:
+    """Cắt phần lặng thừa, rồi cắt đúng tại điểm zero-crossing để không bị click."""
+    keep = int(SAMPLE_RATE * keep_ms / 1000)
+    snap = int(SAMPLE_RATE * snap_ms / 1000)
+    idx = np.flatnonzero(np.abs(c) > thresh)
+    if idx.size == 0:
+        return c
+    c = c[max(0, idx[0] - keep): min(len(c), idx[-1] + 1 + keep)]
+
+    head = c[: snap + 1]
+    zc = np.flatnonzero(np.signbit(head[:-1]) != np.signbit(head[1:]))
+    if zc.size:
+        c = c[zc[0] + 1:]
+
+    tail = c[-(snap + 1):]
+    offset = len(c) - len(tail)
+    zc = np.flatnonzero(np.signbit(tail[:-1]) != np.signbit(tail[1:]))
+    if zc.size:
+        c = c[: offset + zc[-1] + 1]
+    return c
+
+
 def merge_audio_chunks(
     chunks: list[np.ndarray],
-    crossfade_ms: int = DEFAULT_CROSSFADE_MS,
+    crossfade_ms: int = DEFAULT_CROSSFADE_MS,  # giữ để tương thích API, không dùng
     pause_ms: int = DEFAULT_PAUSE_MS,
-    micro_fade_ms: int = 8,
-    min_chunk_ms: int = 120,
-    edge_pad_ms: int = 25,
+    fade_ms: int = 20,
+    edge_pad_ms: int = 30,
 ) -> np.ndarray:
-    valid_chunks = [np.asarray(chunk, dtype=np.float32) for chunk in chunks if len(chunk) > 0]
-    if not valid_chunks:
+    valid = [np.asarray(c, dtype=np.float32).copy() for c in chunks if len(c) > 0]
+    if not valid:
         return np.array([], dtype=np.float32)
 
-    fade_samples = int(SAMPLE_RATE * micro_fade_ms / 1000)
-    pause_samples = int(SAMPLE_RATE * pause_ms / 1000)
-    silence = np.zeros(pause_samples, dtype=np.float32)
+    sr = SAMPLE_RATE
+    fade_max = int(sr * fade_ms / 1000)
+    pad = np.zeros(int(sr * edge_pad_ms / 1000), dtype=np.float32)
+    # tổng khoảng lặng giữa 2 câu vẫn ≈ pause_ms
+    pause = np.zeros(max(0, int(sr * (pause_ms - 2 * edge_pad_ms) / 1000)), dtype=np.float32)
 
-    min_chunk_samples = int(SAMPLE_RATE * min_chunk_ms / 1000)
-    edge_pad_samples = int(SAMPLE_RATE * edge_pad_ms / 1000)
-    silence_pad = np.zeros(edge_pad_samples, dtype=np.float32)
+    processed = []
+    for c in valid:
+        c = c - c.mean()              # bỏ DC offset
+        c = _trim_and_snap(c)         # cắt lặng + snap zero-crossing
+        f = min(fade_max, len(c) // 3)
+        if f > 1:
+            c[:f] *= _raised_cosine(f, True)
+            c[-f:] *= _raised_cosine(f, False)
+        processed.append(c)
 
-    processed_chunks: list[np.ndarray] = []
-    for chunk in valid_chunks:
-        c = chunk.copy()
+    # cân bằng độ lớn (giới hạn nhẹ để không làm biến dạng)
+    rms = np.array([np.sqrt(np.mean(c ** 2)) + 1e-8 for c in processed])
+    target = float(np.median(rms))
+    processed = [c * float(np.clip(target / r, 0.7, 1.4)) for c, r in zip(processed, rms)]
 
-        if len(c) < min_chunk_samples:
-            # Chunk quá ngắn: fade phải áp dụng vào CHÍNH audio TTS trước,
-            # rồi mới ghép silence padding ra ngoài.
-            # Nếu làm ngược (pad trước rồi fade sau) → fade chỉ tác động vào
-            # silence (đã =0) → audio TTS vẫn bắt đầu/kết thúc đột ngột → crack!
-            inner_fade = min(fade_samples, len(c) // 3)
-            if inner_fade > 0:
-                c[:inner_fade] *= np.linspace(0.0, 1.0, inner_fade, dtype=np.float32)
-                c[-inner_fade:] *= np.linspace(1.0, 0.0, inner_fade, dtype=np.float32)
-            # Ghép silence padding ra ngoài audio đã được fade
-            c = np.concatenate([silence_pad, c, silence_pad])
-        else:
-            # Chunk bình thường: fade trực tiếp vào audio
-            n = len(c)
-            actual_fade = min(fade_samples, n // 4)
-            if actual_fade > 0:
-                c[:actual_fade] *= np.linspace(0.0, 1.0, actual_fade, dtype=np.float32)
-                c[-actual_fade:] *= np.linspace(1.0, 0.0, actual_fade, dtype=np.float32)
+    out: list[np.ndarray] = []
+    for i, c in enumerate(processed):
+        if i > 0 and len(pause) > 0:
+            out.append(pause)
+        out.extend([pad, c, pad])
 
-        processed_chunks.append(c)
-
-    result: list[np.ndarray] = []
-    for i, c in enumerate(processed_chunks):
-        if i > 0 and pause_samples > 0:
-            result.append(silence)
-        result.append(c)
-
-    merged = np.concatenate(result)
-
-    # Normalize peak amplitude to 0.95 to avoid clipping / distortion in 16-bit WAV
-    max_val = np.max(np.abs(merged))
-    if max_val > 0.95:
-        merged = (merged / max_val) * 0.95
-
+    merged = np.concatenate(out)
+    peak = np.max(np.abs(merged))
+    if peak > 0.95:
+        merged = merged / peak * 0.95
     return merged.astype(np.float32, copy=False)
 
 
