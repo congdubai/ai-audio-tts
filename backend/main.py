@@ -73,7 +73,8 @@ async def health_check():
 async def synthesize_speech(req: SynthesizeRequest):
     try:
         engine = TTSEngine.get_instance()
-        result = engine.synthesize(text=req.text, speed=req.speed)
+        pause_ms = req.pause_ms if req.pause_ms is not None else 120
+        result = engine.synthesize(text=req.text, speed=req.speed, pause_ms=pause_ms)
 
         # Save to DB history
         try:
@@ -131,7 +132,8 @@ async def synthesize_speech_stream(req: SynthesizeRequest):
 
         def run_synth():
             engine = TTSEngine.get_instance()
-            return engine.synthesize(text=req.text, speed=req.speed, progress_callback=progress_cb)
+            pause_ms = req.pause_ms if req.pause_ms is not None else 120
+            return engine.synthesize(text=req.text, speed=req.speed, pause_ms=pause_ms, progress_callback=progress_cb)
 
         future = loop.run_in_executor(None, run_synth)
 

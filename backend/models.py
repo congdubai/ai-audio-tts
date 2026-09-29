@@ -4,6 +4,7 @@ from typing import Optional, List
 class SynthesizeRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=100000, description="Văn bản tiếng Việt cần chuyển đổi")
     speed: Optional[float] = Field(1.0, ge=0.1, le=5.0, description="Tốc độ giọng đọc (0.1 đến 5.0)")
+    pause_ms: Optional[int] = Field(120, ge=0, le=2000, description="Thời gian tạm ngắt giữa các câu (ms)")
 
 class SynthesizeResponse(BaseModel):
     id: str

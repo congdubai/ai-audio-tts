@@ -40,16 +40,17 @@ export async function checkHealth() {
 
 // ==================== TTS APIs ====================
 
-export async function synthesizeText(text, speed = 1.0) {
+export async function synthesizeText(text, speed = 1.0, pauseMs = 120) {
   const cleanText = String(text || '').trim();
   const numSpeed = typeof speed === 'number' ? speed : parseFloat(speed) || 1.0;
+  const numPause = typeof pauseMs === 'number' ? pauseMs : parseInt(pauseMs, 10) || 120;
 
   const res = await fetch(`${API_BASE_URL}/api/tts/synthesize`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ text: cleanText, speed: numSpeed }),
+    body: JSON.stringify({ text: cleanText, speed: numSpeed, pause_ms: numPause }),
   });
 
   if (!res.ok) {
@@ -71,16 +72,17 @@ export async function synthesizeText(text, speed = 1.0) {
   };
 }
 
-export async function synthesizeTextStream(text, speed = 1.0, onProgress) {
+export async function synthesizeTextStream(text, speed = 1.0, onProgress, pauseMs = 120) {
   const cleanText = String(text || '').trim();
   const numSpeed = typeof speed === 'number' ? speed : parseFloat(speed) || 1.0;
+  const numPause = typeof pauseMs === 'number' ? pauseMs : parseInt(pauseMs, 10) || 120;
 
   const res = await fetch(`${API_BASE_URL}/api/tts/synthesize-stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ text: cleanText, speed: numSpeed }),
+    body: JSON.stringify({ text: cleanText, speed: numSpeed, pause_ms: numPause }),
   });
 
   if (!res.ok) {

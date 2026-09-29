@@ -57,7 +57,7 @@ class TTSEngine:
         self.is_ready = True
         print(f"[OK] Kokoro Vietnamese TTS loaded successfully! (device: {self.device.upper()})")
 
-    def synthesize(self, text: str, speed: float = 1.0, progress_callback: Optional[Any] = None) -> Dict[str, Any]:
+    def synthesize(self, text: str, speed: float = 1.0, pause_ms: int = 120, progress_callback: Optional[Any] = None) -> Dict[str, Any]:
         if not self.is_ready or self.tts_model is None:
             self.initialize()
 
@@ -72,6 +72,7 @@ class TTSEngine:
         sample_rate, audio, phonemes = self.tts_model.synthesize(
             clean_text,
             speed=speed,
+            pause_ms=pause_ms,
             progress_callback=progress_callback
         )
 

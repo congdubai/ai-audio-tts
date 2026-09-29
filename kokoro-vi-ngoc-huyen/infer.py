@@ -16,6 +16,7 @@ DEFAULT_VOICEPACK_FILE = "voices/ngoc_huyen.pt"
 DEFAULT_CONFIG_FILE = "config.json"
 SAMPLE_RATE = 24000
 DEFAULT_CROSSFADE_MS = 50
+DEFAULT_PAUSE_MS = 120
 
 
 def sanitize_text(text: str) -> str:
@@ -113,7 +114,7 @@ def split_text(text: str) -> list[str]:
 def merge_audio_chunks(
     chunks: list[np.ndarray],
     crossfade_ms: int = DEFAULT_CROSSFADE_MS,
-    pause_ms: int = 140,
+    pause_ms: int = DEFAULT_PAUSE_MS,
     micro_fade_ms: int = 8,
     min_chunk_ms: int = 120,
     edge_pad_ms: int = 25,
@@ -226,6 +227,7 @@ class KokoroVietnameseTTS:
         text: str,
         speed: float = 1.0,
         crossfade_ms: int = DEFAULT_CROSSFADE_MS,
+        pause_ms: int = DEFAULT_PAUSE_MS,
         progress_callback: any = None,
     ) -> tuple[int, np.ndarray, str]:
         import torch
@@ -269,7 +271,7 @@ class KokoroVietnameseTTS:
                 if segment_audios:
                     chunks.append(np.concatenate(segment_audios))
 
-        audio = merge_audio_chunks(chunks, crossfade_ms=crossfade_ms)
+        audio = merge_audio_chunks(chunks, crossfade_ms=crossfade_ms, pause_ms=pause_ms)
         if len(audio) == 0:
             raise RuntimeError("No audio generated.")
         return SAMPLE_RATE, audio, "\n".join(phoneme_chunks)
@@ -280,6 +282,7 @@ class KokoroVietnameseTTS:
         output: str | Path,
         speed: float = 1.0,
         crossfade_ms: int = DEFAULT_CROSSFADE_MS,
+        pause_ms: int = DEFAULT_PAUSE_MS,
     ) -> tuple[Path, str]:
         import soundfile as sf
 
@@ -287,6 +290,7 @@ class KokoroVietnameseTTS:
             text,
             speed=speed,
             crossfade_ms=crossfade_ms,
+            pause_ms=pause_ms,
         )
         output_path = Path(output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
