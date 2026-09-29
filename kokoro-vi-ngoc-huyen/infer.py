@@ -16,7 +16,7 @@ DEFAULT_VOICEPACK_FILE = "voices/ngoc_huyen.pt"
 DEFAULT_CONFIG_FILE = "config.json"
 SAMPLE_RATE = 24000
 DEFAULT_CROSSFADE_MS = 50
-DEFAULT_PAUSE_MS = 120
+DEFAULT_PAUSE_MS = 130
 
 
 def sanitize_text(text: str) -> str:

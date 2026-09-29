@@ -13,16 +13,23 @@ VIDEO_OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 VIDEO_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 class VideoDubbingService:
+    _duration_cache: Dict[str, float] = {}
+
     @staticmethod
     def get_ffmpeg_bin() -> str:
         return imageio_ffmpeg.get_ffmpeg_exe()
 
     @classmethod
     def get_video_duration(cls, video_path: Path) -> float:
+        if not video_path:
+            return 0.0
+        path_str = str(video_path.resolve())
+        if path_str in cls._duration_cache:
+            return cls._duration_cache[path_str]
         try:
             ffmpeg_bin = cls.get_ffmpeg_bin()
             proc = subprocess.run(
-                [ffmpeg_bin, "-i", str(video_path)],
+                [ffmpeg_bin, "-i", path_str],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -32,7 +39,9 @@ class VideoDubbingService:
             match = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", proc.stderr)
             if match:
                 h, m, s = match.groups()
-                return float(h) * 3600 + float(m) * 60 + float(s)
+                dur = float(h) * 3600 + float(m) * 60 + float(s)
+                cls._duration_cache[path_str] = dur
+                return dur
         except Exception as e:
             print(f"[!] Warning: Khong the lay duration: {e}")
         return 0.0
@@ -101,12 +110,13 @@ class VideoDubbingService:
 
         print(f"[*] Processing Video ({num_vids} clips). Aspect ratio: {aspect_ratio} ({target_w}x{target_h}, fit={fit_mode}). Voice total: {voice_dur:.2f}s, BGM: {'Yes (' + str(bgm_dur) + 's)' if has_bgm else 'No'}")
 
-        # Construct Video Scaling Filter
+        # Construct Video Scaling Filter (Optimized downscaling for ultra-fast blur)
+        bw, bh = max(180, target_w // 4), max(320, target_h // 4)
         if num_vids == 1:
             if fit_mode == "blur_bg":
                 filter_parts.append(
                     f"[0:v:0]split[bg0][fg0];"
-                    f"[bg0]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},boxblur=20:5[bgblur0];"
+                    f"[bg0]scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh},boxblur=8:2,scale={target_w}:{target_h}[bgblur0];"
                     f"[fg0]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease[fgscaled0];"
                     f"[bgblur0][fgscaled0]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[vout];"
                 )
@@ -119,7 +129,7 @@ class VideoDubbingService:
                 if fit_mode == "blur_bg":
                     filter_parts.append(
                         f"[{idx}:v:0]split[bg{idx}][fg{idx}];"
-                        f"[bg{idx}]scale={target_w}:{target_h}:force_original_aspect_ratio=increase,crop={target_w}:{target_h},boxblur=20:5[bgblur{idx}];"
+                        f"[bg{idx}]scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh},boxblur=8:2,scale={target_w}:{target_h}[bgblur{idx}];"
                         f"[fg{idx}]scale={target_w}:{target_h}:force_original_aspect_ratio=decrease[fgscaled{idx}];"
                         f"[bgblur{idx}][fgscaled{idx}]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30[v{idx}];"
                     )
