@@ -150,15 +150,82 @@ def _normalize_vi_text(text: str) -> str:
     return re.sub(r'\s+', ' ', text).strip()
 
 
+# Từ tiếng Việt dùng làm "mồi" ngữ cảnh cho backend G2P. sea_g2p tự đoán
+# tiếng Anh/tiếng Việt dựa vào từ xung quanh: "do" đứng một mình -> /duː/ (EN),
+# nhưng "và do" -> /zɔ/ (VI). Từ tiếng Anh thật ("và phone") vẫn giữ nguyên.
+VI_CONTEXT_PRIMER = 'và'
+
+
+def _vi_context_phonemes(words: list[str], g2p) -> list[str | None] | None:
+    """Phiên âm cả cụm từ một lần để backend có ngữ cảnh, trả về phoneme thô
+    (đã qua fix của vig2p) cho từng từ. Trả về None nếu không căn chỉnh được."""
+    backend = getattr(g2p, 'backend', None)
+    if backend is None or not words:
+        return None
+    try:
+        from vig2p.core import fix_phonemes as vig2p_fix
+    except Exception:
+        return None
+    preserve = getattr(g2p, 'preserve_unmarked_vietnamese_onsets', True)
+
+    def run_primed(chunk: list[str]) -> list[str] | None:
+        try:
+            raw = backend.run(f"{VI_CONTEXT_PRIMER} {' '.join(chunk)}")
+            raw = raw[0] if isinstance(raw, tuple) else str(raw)
+        except Exception:
+            return None
+        parts = raw.split()
+        # Normalizer có thể mở rộng từ (VD: "TP" -> "thành phố") -> lệch số lượng
+        if len(parts) != len(chunk) + 1:
+            return None
+        return parts[1:]
+
+    parts = run_primed(words)
+    if parts is None:
+        # Lệch căn chỉnh -> phiên âm từng từ (vẫn có từ mồi); từ nào vẫn lệch
+        # thì giữ None để _phonemize_vi_text dùng cách cũ.
+        parts = [(run_primed([w]) or [None])[0] for w in words]
+    return [
+        None if p is None
+        else vig2p_fix(p, source_text=w, preserve_unmarked_vietnamese_onsets=preserve)
+        for p, w in zip(parts, words)
+    ]
+
+
 def _phonemize_vi_text(text: str, g2p) -> str:
     text = _normalize_vi_text(text)
+    tokens = VI_TEXT_TOKEN_RE.findall(text)
+
+    # Gom các từ liên tiếp (chỉ cách nhau bởi khoảng trắng) thành cụm để
+    # phiên âm có ngữ cảnh, tránh từ Việt bị đọc thành tiếng Anh.
+    context_raw: dict[int, str] = {}
+    run: list[int] = []
+
+    def flush_run():
+        if run:
+            ps = _vi_context_phonemes([tokens[i] for i in run], g2p)
+            if ps is not None:
+                context_raw.update((i, p) for i, p in zip(run, ps) if p is not None)
+            run.clear()
+
+    for i, token in enumerate(tokens):
+        if token.isspace():
+            continue
+        if VI_WORD_RE.match(token):
+            run.append(i)
+        else:
+            flush_run()
+    flush_run()
+
     pieces = []
-    for token in VI_TEXT_TOKEN_RE.findall(text):
+    for i, token in enumerate(tokens):
         if token.isspace():
             pieces.append(' ')
         elif VI_WORD_RE.match(token):
-            raw = g2p(token)
-            raw = raw[0] if isinstance(raw, tuple) else raw
+            raw = context_raw.get(i)
+            if raw is None:
+                raw = g2p(token)
+                raw = raw[0] if isinstance(raw, tuple) else raw
             pieces.append(_fix_vi_phonemes(raw, source_text=token))
         else:
             pieces.append(_fix_vi_phonemes(token))
