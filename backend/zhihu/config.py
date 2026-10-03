@@ -74,24 +74,137 @@ EXTRACT_JS = """
 # Viết có dấu bình thường (dùng làm gợi ý trên giao diện). Khi tra cứu, cả khoá
 # và từ người dùng nhập đều được bỏ dấu + chữ thường nên "Tien Hiep" vẫn khớp.
 GENRE_MAP = {
-    "tiên hiệp": "仙侠",
-    "huyền huyễn": "玄幻",
-    "xuyên không": "穿越",
-    "trọng sinh": "重生",
-    "ngược luyến": "虐恋",
+    # --- Ngôn tình & Tình cảm ---
     "ngôn tình": "言情",
-    "đô thị": "都市",
-    "kiếm hiệp": "武侠",
-    "khoa huyễn": "科幻",
-    "huyền nghi": "悬疑",
-    "trinh thám": "推理",
-    "hệ thống": "系统",
+    "tình cảm": "情感",
+    "tổng tài": "霸道总裁",
+    "tổng tài cô gái bình thường": "总裁平民女",
+    "cưới trước yêu sau": "先婚后爱",
+    "hợp đồng hôn nhân": "契约婚姻",
+    "yêu thầm": "暗恋",
+    "ngược tình": "虐恋",
+    "ngược luyến": "虐恋",
+    "chữa lành": "治愈",
+    "he": "甜文",
+    "be": "虐文",
+
+    # --- Gia đình & Hối hận (Audiobook drama) ---
+    "gia đình hối hận": "全家后悔",
+    "sau khi nữ chính rời đi cả nhà mới hối hận": "离开后全家后悔",
+    "con gái thật con gái nuôi": "真假千金",
+    "thiên kim thật giả": "真假千金",
+    "nhận nhầm con": "认错孩子",
+    "trọng nam khinh nữ": "重男轻女",
+    "cả nhà thiên vị em gái": "全家偏心",
+    "đuổi con ruột": "赶走亲女儿",
+    "đuổi con ruột sau đó tìm cách níu kéo": "赶走亲生女儿后挽回",
+
+    # --- Trọng sinh / Sống lại ---
+    "trọng sinh": "重生",
+    "sống lại": "重生",
+    "chết rồi quay về quá khứ": "重生过去",
+    "trọng sinh trả thù": "重生复仇",
+    "trọng sinh thay đổi cuộc đời": "重生逆袭",
+    "trọng sinh sau khi bị gia đình phản bội": "重生背叛",
+    "biết trước tương lai và thay đổi số phận": "预知未来逆风翻盘",
+
+    # --- Xuyên sách & Xuyên không ---
+    "xuyên sách": "穿书",
+    "xuyên không": "穿越",
+    "xuyên thành nữ phụ": "穿成女配",
+    "xuyên thành nhân vật phản diện": "穿成反派",
+    "xuyên thành người bị cả nhà ghét": "穿成全网黑",
+    "xuyên vào thế giới cổ đại": "穿越古代",
+
+    # --- Cổ đại & Cung đấu ---
+    "cổ đại": "古代",
     "cung đấu": "宫斗",
+    "trạch đấu": "宅斗",
+    "cung đình": "宫廷",
+    "hoàng đế hoàng hậu": "帝后",
+    "tranh sủng": "争宠",
+    "hậu cung": "后宫",
+    "nữ chính báo thù": "女主复仇",
+    "nữ cường": "大女主",
+    "làm hoàng hậu phi tần": "当后宫主子",
+
+    # --- Hào môn & Gia tộc ---
+    "hào môn": "豪门",
+    "gia tộc": "世家",
+    "con nhà giàu bị thất lạc": "豪门流落千金",
+    "gia tộc quyền thế": "权贵世家",
+    "tranh đoạt tài sản": "争夺财产",
+    "hôn ước": "婚约",
+    "anh em trong gia đình đấu đá": "豪门内斗",
+    "đại gia ẩn danh": "马甲文",
+
+    # --- Sảng văn & Trả thù ---
+    "sảng văn": "爽文",
+    "vả mặt": "打脸",
+    "vả mặt liên tục": "疯狂打脸",
+    "nữ chính bị coi thường": "女主被看不起",
+    "lật ngược tình thế": "逆袭",
+    "bị phản bội quay lại trả thù": "背叛复仇",
+    "giả yếu để phản công": "扮猪吃老虎",
+    "người từng coi thường nữ chính phải hối hận": "打脸前任与仇人",
+
+    # --- Đô thị & Hiện đại ---
+    "đô thị": "都市",
+    "khởi nghiệp": "创业",
+    "làm giàu": "致富",
+    "thương chiến": "商战",
+    "nhân vật chính từ nghèo khó trở thành thành đạt": "穷小子逆袭",
+
+    # --- Huyền huyễn & Tu tiên ---
+    "tu tiên": "修仙",
+    "huyền huyễn": "玄幻",
+    "tiên hiệp": "仙侠",
+    "kiếm hiệp": "武侠",
+    "phế vật cường giả": "废柴逆袭",
+    "tông môn": "宗门",
+    "phiêu lưu": "冒险",
+
+    # --- Hệ thống ---
+    "hệ thống": "系统",
+    "hệ thống làm giàu": "致富系统",
+    "hệ thống nhiệm vụ": "任务系统",
+    "hệ thống phản diện": "反派系统",
+    "hệ thống điểm danh": "签到系统",
+    "hệ thống giúp thay đổi số phận": "系统改变命运",
+
+    # --- Kinh dị, Linh dị & Trinh thám ---
+    "kinh dị": "恐怖",
+    "linh dị": "灵异",
+    "đô thị linh dị": "都市灵异",
+    "ma quỷ": "鬼怪",
+    "nhà hoang": "废弃凶宅",
+    "trường học": "校园怪谈",
+    "điều tra vụ án kỳ bí": "悬疑侦探",
+    "trinh thám": "推理",
+    "phá án": "破案",
+    "án mạng": "命案",
+    "thám tử": "侦探",
+    "bí mật gia đình": "家族秘密",
+
+    # --- Mạt thế ---
+    "mạt thế": "末世",
+    "tận thế": "末日",
+    "zombie": "丧尸",
+    "sinh tồn": "生存",
+    "tích trữ vật tư": "囤物资",
+    "không gian tùy thân": "随身空间",
+    "trọng sinh trước ngày tận thế": "末世重生",
+
+    # --- Điền văn & Chữa lành ---
+    "điền văn": "种田文",
+    "làm ruộng": "种田",
+    "cuộc sống bình dị": "慢生活",
+    "xây dựng gia đình": "家常理短",
+    "làm giàu từ từ": "白手起家",
+    "tình cảm nhẹ nhàng": "甜宠",
     "đam mỹ": "耽美",
     "quân sự": "军事",
     "lịch sử": "历史",
     "vô hạn lưu": "无限流",
-    "mạt thế": "末世",
-    "sảng văn": "爽文",
     "hài hước": "搞笑",
 }
