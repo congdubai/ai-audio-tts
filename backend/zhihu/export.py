@@ -7,13 +7,6 @@ from pathlib import Path
 
 from . import config
 
-FIELDS = [
-    "genre_vi", "genre_cn", "votes",
-    "title", "title_vi",
-    "excerpt", "excerpt_vi",
-    "link",
-]
-
 
 def _path(job_id: str, ext: str) -> Path:
     config.OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -28,12 +21,16 @@ def to_json(results: list[dict], job_id: str) -> Path:
 
 def to_csv(results: list[dict], job_id: str) -> Path:
     path = _path(job_id, "csv")
-    # utf-8-sig để Excel hiển thị đúng tiếng Việt / tiếng Trung
+    has_translation = any(r.get("title_vi") or r.get("excerpt_vi") for r in results)
+    fields = ["title", "excerpt", "link", "votes", "genre_vi", "genre_cn"]
+    if has_translation:
+        fields = ["title", "title_vi", "excerpt", "excerpt_vi", "link", "votes", "genre_vi", "genre_cn"]
+
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         for row in results:
-            w.writerow({k: row.get(k, "") for k in FIELDS})
+            w.writerow({k: row.get(k, "") for k in fields})
     return path
 
 

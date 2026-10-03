@@ -25,14 +25,15 @@ const nowTime = () => new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
 function ResultCard({ item, index, showOriginal }) {
   const [expanded, setExpanded] = useState(false);
-  const title = (!showOriginal && item.title_vi) || item.title || '(Không có tiêu đề)';
-  const subTitle = !showOriginal && item.title_vi ? item.title : item.title_vi;
-  const excerpt = (!showOriginal && item.excerpt_vi) || item.excerpt || '';
+  const title = (showOriginal && item.title_vi ? item.title_vi : item.title) || '(Không có tiêu đề)';
+  const subTitle = item.title_vi && !showOriginal ? item.title_vi : null;
+  const excerpt = (showOriginal && item.excerpt_vi ? item.excerpt_vi : item.excerpt) || '';
 
   return (
     <article className="nf-result-card" style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}>
       <div className="nf-result-rank">#{index + 1}</div>
       <div className="nf-result-body">
+        {/* Trường 1: Tiêu đề + Lượt vote */}
         <div className="nf-result-top">
           <h3 className="nf-result-title">
             {item.link ? (
@@ -45,20 +46,24 @@ function ResultCard({ item, index, showOriginal }) {
             <ThumbsUp size={13} /> {formatVotes(item.votes)}
           </span>
         </div>
-        {subTitle && <p className="nf-result-subtitle">{subTitle}</p>}
+
+        {subTitle && <p className="nf-result-subtitle">Dịch: {subTitle}</p>}
+
         <div className="nf-result-tags">
           {String(item.genre_vi || '').split(', ').filter(Boolean).map((g, i) => (
             <span key={g} className="nf-tag">
-              {g} <em>{String(item.genre_cn || '').split(', ')[i]}</em>
+              {g} <em>({String(item.genre_cn || '').split(', ')[i]})</em>
             </span>
           ))}
         </div>
+
+        {/* Trường 2: Nội dung / Đoạn trích */}
         {excerpt && (
           <>
             <p className={`nf-result-excerpt ${expanded ? 'expanded' : ''}`}>{excerpt}</p>
             {excerpt.length > 220 && (
               <button type="button" className="nf-expand-btn" onClick={() => setExpanded((v) => !v)}>
-                {expanded ? <><ChevronUp size={14} /> Thu gọn</> : <><ChevronDown size={14} /> Xem thêm</>}
+                {expanded ? <><ChevronUp size={14} /> Thu gọn</> : <><ChevronDown size={14} /> Xem thêm đầy đủ</>}
               </button>
             )}
           </>
@@ -75,7 +80,7 @@ export default function NovelFinder({ showToast }) {
   const [genres, setGenres] = useState(['tiên hiệp', 'trọng sinh']);
   const [genreInput, setGenreInput] = useState('');
   const [scrolls, setScrolls] = useState(4);
-  const [translateEnabled, setTranslateEnabled] = useState(true);
+  const [translateEnabled, setTranslateEnabled] = useState(false);
   const [model, setModel] = useState('');
   const [headless, setHeadless] = useState(false);
   const [waitCaptcha, setWaitCaptcha] = useState(false);
