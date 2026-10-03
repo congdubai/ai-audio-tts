@@ -1606,6 +1606,47 @@ html, body, #root {
 
 .nf-suggestions {
   margin-top: 12px;
+  width: 100%;
+}
+
+.nf-suggestions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.nf-toggle-suggestions-btn {
+  background: transparent;
+  border: none;
+  color: #818cf8;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s;
+}
+
+.nf-toggle-suggestions-btn:hover {
+  color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.nf-suggestions-list {
+  transition: all 0.25s ease;
+}
+
+.nf-suggestions-list.expanded {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+  padding-bottom: 4px;
 }
 
 .nf-suggestions .sample-chip {

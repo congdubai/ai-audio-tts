@@ -84,6 +84,7 @@ export default function NovelFinder({ showToast }) {
   const [model, setModel] = useState('');
   const [headless, setHeadless] = useState(false);
   const [waitCaptcha, setWaitCaptcha] = useState(false);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
 
   const [running, setRunning] = useState(null); // null | 'search' | 'login'
   const [progress, setProgress] = useState(null);
@@ -301,9 +302,24 @@ export default function NovelFinder({ showToast }) {
 
           {suggestions.length > 0 && (
             <div className="samples-container nf-suggestions">
-              <span className="samples-label">Gợi ý:</span>
-              <div className="samples-list">
-                {suggestions.slice(0, 12).map((s) => (
+              <div className="nf-suggestions-header">
+                <span className="samples-label">Gợi ý thể loại ({suggestions.length}):</span>
+                {suggestions.length > 16 && (
+                  <button
+                    type="button"
+                    className="nf-toggle-suggestions-btn"
+                    onClick={() => setShowAllSuggestions((prev) => !prev)}
+                  >
+                    {showAllSuggestions ? (
+                      <><ChevronUp size={13} /> Thu gọn</>
+                    ) : (
+                      <><ChevronDown size={13} /> Xem tất cả ({suggestions.length})</>
+                    )}
+                  </button>
+                )}
+              </div>
+              <div className={`samples-list nf-suggestions-list ${showAllSuggestions ? 'expanded' : ''}`}>
+                {(showAllSuggestions ? suggestions : suggestions.slice(0, 16)).map((s) => (
                   <button key={s} type="button" className="sample-chip" disabled={isBusy} onClick={() => addGenre(s)}>
                     <Plus size={11} /> {s}
                   </button>
