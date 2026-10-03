@@ -10,3 +10,5 @@ loguru
 huggingface_hub
 python-multipart
 imageio-ffmpeg
+playwright
+requests

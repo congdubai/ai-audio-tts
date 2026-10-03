@@ -13,7 +13,11 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from tts_service import TTSEngine, OUTPUTS_DIR
 from video_service import VideoDubbingService, VIDEO_OUTPUTS_DIR, VIDEO_UPLOADS_DIR
 from db import init_db, add_history_entry, get_history, delete_history_entry, add_video_history_entry, get_video_history
-from models import SynthesizeRequest, SynthesizeResponse, HistoryItem
+from models import SynthesizeRequest, SynthesizeResponse, HistoryItem, ZhihuSearchRequest
+from zhihu import service as zhihu_service
+from zhihu import export as zhihu_export
+from zhihu.scraper import ScraperError, JobCancelled
+from zhihu.translate import OllamaError
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -452,6 +456,97 @@ async def delete_video_history(video_id: str):
             pass
 
     return {"status": "success", "message": "Đã xóa video thành công."}
+
+# ==================== Zhihu Novel Finder Endpoints ====================
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+async def _run_zhihu_job_stream(job, work):
+    """Chạy hàm blocking `work(emit)` trong thread riêng, stream sự kiện qua SSE."""
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def emit(msg: dict):
+        loop.call_soon_threadsafe(queue.put_nowait, msg)
+
+    future = loop.run_in_executor(None, lambda: work(emit))
+    try:
+        yield _sse({"type": "start", "job_id": job.id})
+        while not future.done():
+            try:
+                msg = await asyncio.wait_for(queue.get(), timeout=0.1)
+                yield _sse(msg)
+            except asyncio.TimeoutError:
+                pass
+        while not queue.empty():
+            yield _sse(queue.get_nowait())
+
+        try:
+            result = await future
+            yield _sse({"type": "complete", "percent": 100, "result": result})
+        except JobCancelled:
+            yield _sse({"type": "error", "code": "cancelled", "message": "Đã huỷ theo yêu cầu."})
+        except OllamaError as e:
+            yield _sse({"type": "error", "code": "ollama", "message": str(e)})
+        except ScraperError as e:
+            yield _sse({"type": "error", "code": type(e).__name__, "message": str(e)})
+        except ValueError as e:
+            yield _sse({"type": "error", "code": "invalid", "message": str(e)})
+        except Exception as e:
+            print(f"[!] Zhihu job error: {e!r}")
+            yield _sse({"type": "error", "code": "unknown", "message": f"Lỗi không xác định: {e}"})
+    finally:
+        # Client ngắt kết nối hoặc job xong -> dừng thread worker
+        job.cancel_event.set()
+        zhihu_service.finish_job(job.id)
+
+@app.get("/api/zhihu/status")
+async def zhihu_status():
+    return await asyncio.get_running_loop().run_in_executor(None, zhihu_service.get_status)
+
+@app.post("/api/zhihu/login-stream")
+async def zhihu_login_stream():
+    job = zhihu_service.create_job()
+    return StreamingResponse(
+        _run_zhihu_job_stream(job, lambda emit: zhihu_service.run_login(job, emit)),
+        media_type="text/event-stream",
+    )
+
+@app.post("/api/zhihu/search-stream")
+async def zhihu_search_stream(req: ZhihuSearchRequest):
+    job = zhihu_service.create_job()
+
+    def work(emit):
+        return zhihu_service.run_search(
+            job, emit,
+            genres=req.genres,
+            scrolls=req.scrolls,
+            translate_enabled=req.translate,
+            model=req.model,
+            headless=req.headless,
+            wait_captcha=req.wait_captcha,
+        )
+
+    return StreamingResponse(_run_zhihu_job_stream(job, work), media_type="text/event-stream")
+
+@app.post("/api/zhihu/cancel/{job_id}")
+async def zhihu_cancel(job_id: str):
+    if not zhihu_service.cancel_job(job_id):
+        raise HTTPException(status_code=404, detail="Không tìm thấy phiên đang chạy.")
+    return {"status": "success", "message": "Đang huỷ..."}
+
+@app.get("/api/zhihu/export/{job_id}")
+async def zhihu_export_file(job_id: str, format: str = "csv"):
+    path = zhihu_export.get_export_path(job_id, format)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy file xuất.")
+    media = "text/csv" if format == "csv" else "application/json"
+    return FileResponse(
+        path=str(path),
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{path.name}"'},
+    )
 
 if __name__ == "__main__":
     import uvicorn

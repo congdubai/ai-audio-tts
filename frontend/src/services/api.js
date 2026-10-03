@@ -237,3 +237,86 @@ export async function deleteVideoHistoryItem(id) {
   if (!res.ok) throw new Error('Không thể xóa video');
   return await res.json();
 }
+
+// ==================== Zhihu Novel Finder APIs ====================
+
+export async function fetchZhihuStatus() {
+  const res = await fetch(`${API_BASE_URL}/api/zhihu/status`);
+  if (!res.ok) throw new Error('Không lấy được trạng thái Zhihu/Ollama');
+  return await res.json();
+}
+
+/**
+ * Đọc luồng SSE của các job Zhihu.
+ * handlers: { onStart(jobId), onProgress(payload), onLog(payload) }
+ * Trả về result khi 'complete', ném Error (kèm .code) khi 'error'.
+ */
+async function readZhihuStream(path, body, handlers = {}, signal) {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+    signal,
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: 'Lỗi kết nối máy chủ' }));
+    let msg = 'Lỗi server';
+    if (typeof errorData.detail === 'string') msg = errorData.detail;
+    else if (Array.isArray(errorData.detail)) {
+      msg = errorData.detail.map((e) => `${e.loc?.slice(1).join('.') || 'Trường'}: ${e.msg}`).join(', ');
+    }
+    throw new Error(msg);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split('\n\n');
+    buffer = parts.pop() || '';
+
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith('data: ')) continue;
+      let payload;
+      try {
+        payload = JSON.parse(line.slice(6));
+      } catch (e) {
+        console.warn('Zhihu stream parse error:', e);
+        continue;
+      }
+      if (payload.type === 'start') handlers.onStart?.(payload.job_id);
+      else if (payload.type === 'progress') handlers.onProgress?.(payload);
+      else if (payload.type === 'log') handlers.onLog?.(payload);
+      else if (payload.type === 'complete') return payload.result;
+      else if (payload.type === 'error') {
+        const err = new Error(payload.message || 'Lỗi không xác định');
+        err.code = payload.code;
+        throw err;
+      }
+    }
+  }
+  throw new Error('Kết nối tới server bị ngắt trước khi hoàn tất.');
+}
+
+export function zhihuLoginStream(handlers, signal) {
+  return readZhihuStream('/api/zhihu/login-stream', null, handlers, signal);
+}
+
+export function zhihuSearchStream(options, handlers, signal) {
+  return readZhihuStream('/api/zhihu/search-stream', options, handlers, signal);
+}
+
+export async function cancelZhihuJob(jobId) {
+  if (!jobId) return;
+  await fetch(`${API_BASE_URL}/api/zhihu/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+}
+
+export function getZhihuExportUrl(jobId, format = 'csv') {
+  return `${API_BASE_URL}/api/zhihu/export/${jobId}?format=${format}`;
+}

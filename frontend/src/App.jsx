@@ -3,11 +3,12 @@ import Header from './components/Header';
 import TextEditor from './components/TextEditor';
 import AudioPlayer from './components/AudioPlayer';
 import VideoDubber from './components/VideoDubber';
+import NovelFinder from './components/NovelFinder';
 import { checkHealth, synthesizeTextStream } from './services/api';
-import { AlertCircle, CheckCircle, Sparkles, Volume2, Film } from 'lucide-react';
+import { AlertCircle, CheckCircle, Sparkles, Volume2, Film, BookMarked } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('tts'); // 'tts' | 'video'
+  const [activeTab, setActiveTab] = useState('tts'); // 'tts' | 'video' | 'novel'
   const [text, setText] = useState('Xin chào, tôi là giọng đọc Ngọc Huyền. Chúc bạn một ngày tốt lành và tràn đầy năng lượng!');
   const [speed, setSpeed] = useState(1.0);
   const [isLoading, setIsLoading] = useState(false);
@@ -98,6 +99,16 @@ export default function App() {
           >
             <Film size={18} />
             <span>Lồng Tiếng Video (Video Dubbing)</span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-novel-finder"
+            className={`nav-tab-btn ${activeTab === 'novel' ? 'active' : ''}`}
+            onClick={() => setActiveTab('novel')}
+          >
+            <BookMarked size={18} />
+            <span>Tìm Truyện Zhihu</span>
             <span className="tab-new-badge">Mới</span>
           </button>
         </div>
@@ -143,6 +154,11 @@ export default function App() {
             <VideoDubber showToast={showToast} currentAudio={currentAudio} />
           </main>
         )}
+
+        {/* Tab 3: Zhihu Novel Finder (giữ mounted để không mất tiến trình khi đổi tab) */}
+        <main className="animate-fade-in" style={{ display: activeTab === 'novel' ? 'block' : 'none' }}>
+          <NovelFinder showToast={showToast} />
+        </main>
 
         <footer className="footer-bar">
           <p>

@@ -18,6 +18,8 @@ backend/outputs/
 backend/video_outputs/
 backend/video_uploads/
 backend/*.db
+backend/zhihu_profile/
+backend/zhihu_outputs/
 outputs/
 *.wav
 *.mp4

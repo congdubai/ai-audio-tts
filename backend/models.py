@@ -30,3 +30,11 @@ class HistoryItem(BaseModel):
     created_at: str
     audio_url: str
     download_url: str
+
+class ZhihuSearchRequest(BaseModel):
+    genres: List[str] = Field(..., min_length=1, max_length=20, description="Thể loại / từ khoá tiếng Việt")
+    scrolls: int = Field(4, ge=0, le=30, description="Số lần cuộn trang kết quả")
+    translate: bool = Field(True, description="Dịch tiêu đề & trích đoạn sang tiếng Việt")
+    model: Optional[str] = Field(None, description="Model Ollama, mặc định qwen2.5:7b")
+    headless: bool = Field(False, description="Chạy trình duyệt ẩn")
+    wait_captcha: bool = Field(False, description="Chờ người dùng tự giải captcha thay vì dừng")
