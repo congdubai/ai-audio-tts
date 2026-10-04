@@ -522,6 +522,7 @@ async def zhihu_search_stream(req: ZhihuSearchRequest):
             job, emit,
             genres=req.genres,
             scrolls=req.scrolls,
+            combine=req.combine,
             translate_enabled=req.translate,
             model=req.model,
             headless=req.headless,

@@ -80,6 +80,7 @@ export default function NovelFinder({ showToast }) {
   const [genres, setGenres] = useState(['tiên hiệp', 'trọng sinh']);
   const [genreInput, setGenreInput] = useState('');
   const [scrolls, setScrolls] = useState(4);
+  const [combineKeywords, setCombineKeywords] = useState(true);
   const [translateEnabled, setTranslateEnabled] = useState(false);
   const [model, setModel] = useState('');
   const [headless, setHeadless] = useState(false);
@@ -190,10 +191,14 @@ export default function NovelFinder({ showToast }) {
       return;
     }
     setResult(null);
-    addLog(`Bắt đầu tìm: ${list.join(', ')} (cuộn ${scrolls} lần, ${translateEnabled ? `dịch bằng ${model}` : 'không dịch'})`);
+    const modeText = list.length > 1
+      ? (combineKeywords ? 'gộp từ khoá thành 1 tìm kiếm' : 'tìm riêng từng thể loại')
+      : '1 thể loại';
+    addLog(`Bắt đầu tìm: ${list.join(', ')} (${modeText}, cuộn ${scrolls} lần, ${translateEnabled ? `dịch bằng ${model}` : 'không dịch'})`);
     const res = await runJob('search', (signal) => zhihuSearchStream({
       genres: list,
       scrolls,
+      combine: combineKeywords,
       translate: translateEnabled,
       model: model || null,
       headless,
@@ -339,6 +344,14 @@ export default function NovelFinder({ showToast }) {
                 id="nf-scrolls" className="speed-slider" disabled={isBusy}
                 onChange={(e) => setScrolls(parseInt(e.target.value, 10))} />
               <p className="nf-hint">Mỗi lần cuộn nghỉ ngẫu nhiên 2.5–5 giây. Càng nhiều càng dễ bị captcha.</p>
+            </div>
+
+            <div className="nf-option-row">
+              <label className="checkbox-control nf-check" title="Gộp tất cả thể loại lại thành 1 tìm kiếm duy nhất trên Zhihu (AND query)">
+                <input type="checkbox" id="nf-combine" checked={combineKeywords} disabled={isBusy}
+                  onChange={(e) => setCombineKeywords(e.target.checked)} />
+                <span className="checkbox-label-group"><BookMarked size={15} /> Gộp các từ khoá (tìm bài có cả 2+ thể loại)</span>
+              </label>
             </div>
 
             <div className="nf-option-row">

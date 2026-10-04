@@ -34,7 +34,9 @@ class HistoryItem(BaseModel):
 class ZhihuSearchRequest(BaseModel):
     genres: List[str] = Field(..., min_length=1, max_length=20, description="Thể loại / từ khoá tiếng Việt")
     scrolls: int = Field(4, ge=0, le=30, description="Số lần cuộn trang kết quả")
+    combine: bool = Field(True, description="Gộp các từ khoá thành 1 truy vấn (AND search query)")
     translate: bool = Field(False, description="Dịch tiêu đề & trích đoạn sang tiếng Việt (mặc định tắt)")
     model: Optional[str] = Field(None, description="Model Ollama, mặc định qwen2.5:7b")
     headless: bool = Field(False, description="Chạy trình duyệt ẩn")
     wait_captcha: bool = Field(False, description="Chờ người dùng tự giải captcha thay vì dừng")
+

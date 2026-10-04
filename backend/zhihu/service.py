@@ -90,8 +90,9 @@ def run_login(job: Job, emit) -> dict:
     return {"logged_in": True}
 
 
-def run_search(job: Job, emit, genres: list[str], scrolls: int, translate_enabled: bool,
-               model: str, headless: bool, wait_captcha: bool) -> dict:
+def run_search(job: Job, emit, genres: list[str], scrolls: int, combine: bool = True,
+               translate_enabled: bool = False, model: str = None, headless: bool = False,
+               wait_captcha: bool = False) -> dict:
     progress, log = _make_emitter(emit)
     genres = [g.strip() for g in genres if g and g.strip()]
     if not genres:
@@ -119,46 +120,72 @@ def run_search(job: Job, emit, genres: list[str], scrolls: int, translate_enable
     # ---- 2. Cào Zhihu (10-55%) ----
     by_link: dict[str, dict] = {}
     scrape_end = 55 if translate_enabled else 95
-    span = (scrape_end - 10) / n
     empty_genres: list[str] = []
 
     with ZhihuSession(headless=headless, log=log, cancel_event=job.cancel_event) as s:
         if not s.is_logged_in():
             raise ScraperError("Chưa đăng nhập Zhihu. Hãy bấm 'Đăng nhập Zhihu' trước khi tìm.")
 
-        for gi, (g, cn) in enumerate(pairs):
-            base = 10 + span * gi
-            progress(base, f"Đang cào Zhihu: {g} ({gi + 1}/{n})...", stage="scrape")
+        if combine and n > 1:
+            g_combined = " + ".join(genres)
+            cn_combined = " ".join(cn for _, cn in pairs)
+            log(f"Gộp từ khoá thành 1 tìm kiếm: [{g_combined}] → [{cn_combined}]", "info")
+            progress(10, f"Đang cào Zhihu: {g_combined}...", stage="scrape")
 
-            def on_scroll(done, total, _base=base, _g=g):
-                progress(_base + span * done / max(total, 1) * 0.9,
-                         f"Đang cào Zhihu: {_g} – cuộn {done}/{total}", stage="scrape")
+            def on_scroll(done, total):
+                progress(10 + (scrape_end - 10) * done / max(total, 1) * 0.9,
+                         f"Đang cào Zhihu: {g_combined} – cuộn {done}/{total}", stage="scrape")
 
             try:
-                items = s.search(cn, scrolls, wait_captcha=wait_captcha, on_scroll=on_scroll)
+                items = s.search(cn_combined, scrolls, wait_captcha=wait_captcha, on_scroll=on_scroll)
             except NoResultsError as e:
                 log(str(e), "warning")
-                empty_genres.append(g)
+                empty_genres.append(g_combined)
                 items = []
 
-            added = 0
             for it in items:
                 key = it.get("link") or it.get("title")
-                if key in by_link:  # cùng bài xuất hiện ở nhiều thể loại -> gộp nhãn
-                    prev = by_link[key]
-                    if g not in prev["genre_vi"].split(", "):
-                        prev["genre_vi"] += f", {g}"
-                        prev["genre_cn"] += f", {cn}"
-                    continue
-                it["genre_vi"], it["genre_cn"] = g, cn
+                it["genre_vi"] = g_combined
+                it["genre_cn"] = cn_combined
                 it["title_vi"], it["excerpt_vi"] = "", ""
                 by_link[key] = it
-                added += 1
             if items:
-                log(f"[{g}] lấy được {len(items)} kết quả ({added} mới).", "success")
+                log(f"[{g_combined}] lấy được {len(items)} kết quả khớp cả {n} thể loại.", "success")
+        else:
+            span = (scrape_end - 10) / n
+            for gi, (g, cn) in enumerate(pairs):
+                base = 10 + span * gi
+                progress(base, f"Đang cào Zhihu: {g} ({gi + 1}/{n})...", stage="scrape")
 
-            if gi < n - 1:
-                s._sleep(random.uniform(*config.GENRE_DELAY_RANGE))
+                def on_scroll(done, total, _base=base, _g=g):
+                    progress(_base + span * done / max(total, 1) * 0.9,
+                             f"Đang cào Zhihu: {_g} – cuộn {done}/{total}", stage="scrape")
+
+                try:
+                    items = s.search(cn, scrolls, wait_captcha=wait_captcha, on_scroll=on_scroll)
+                except NoResultsError as e:
+                    log(str(e), "warning")
+                    empty_genres.append(g)
+                    items = []
+
+                added = 0
+                for it in items:
+                    key = it.get("link") or it.get("title")
+                    if key in by_link:  # cùng bài xuất hiện ở nhiều thể loại -> gộp nhãn
+                        prev = by_link[key]
+                        if g not in prev["genre_vi"].split(", "):
+                            prev["genre_vi"] += f", {g}"
+                            prev["genre_cn"] += f", {cn}"
+                        continue
+                    it["genre_vi"], it["genre_cn"] = g, cn
+                    it["title_vi"], it["excerpt_vi"] = "", ""
+                    by_link[key] = it
+                    added += 1
+                if items:
+                    log(f"[{g}] lấy được {len(items)} kết quả ({added} mới).", "success")
+
+                if gi < n - 1:
+                    s._sleep(random.uniform(*config.GENRE_DELAY_RANGE))
 
     results = list(by_link.values())
     if not results:
