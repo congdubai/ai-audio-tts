@@ -119,6 +119,10 @@ class ZhihuSession:
             except Exception as e:
                 raise _friendly_playwright_error(e)
             self.page = self.ctx.pages[0] if self.ctx.pages else self.ctx.new_page()
+            try:
+                self.page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            except Exception:
+                pass
             return self
         except BaseException:
             self._close()
@@ -136,6 +140,8 @@ class ZhihuSession:
                     headless=self.headless,
                     locale="zh-CN",
                     viewport={"width": 1280, "height": 900},
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                    args=["--disable-blink-features=AutomationControlled"],
                 )
                 if channel:
                     self.log(f"Dùng trình duyệt có sẵn trên máy: {channel}")

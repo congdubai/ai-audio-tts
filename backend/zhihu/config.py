@@ -41,9 +41,9 @@ MAX_SCROLLS = 30
 
 # ==================== SELECTOR ZHIHU (sửa tại đây khi Zhihu đổi giao diện) ====================
 SELECTORS = {
-    "card": ".SearchResult-Card, .List-item",
-    "title": "h2 a, .ContentItem-title a",
-    "body": ".RichContent-inner, .RichText",
+    "card": ".SearchResult-Card, .List-item, .ContentItem, [class*='SearchResult-Card']",
+    "title": "h2 a, .ContentItem-title a, a[data-za-detail-view-element_name='Title']",
+    "body": ".RichContent-inner, .RichText, .RichContent",
     "vote": ".VoteButton, [class*='Vote']",
 }
 
@@ -61,7 +61,7 @@ EXTRACT_JS = """
     const body = c.querySelector(sel.body);
     const vote = c.querySelector(sel.vote);
     return {
-      title: a ? a.innerText.trim() : '',
+      title: a ? a.innerText.trim() : (c.querySelector('h2') ? c.querySelector('h2').innerText.trim() : ''),
       link: a ? a.href : '',
       excerpt: body ? body.innerText.trim() : '',
       votes_raw: vote ? vote.innerText.trim() : ''
