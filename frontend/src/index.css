@@ -2010,6 +2010,27 @@ html, body, #root {
   color: #a5b4fc;
 }
 
+.nf-result-meta-pills {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.nf-date-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #a5b4fc;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
 .nf-vote-pill {
   flex-shrink: 0;
   display: inline-flex;

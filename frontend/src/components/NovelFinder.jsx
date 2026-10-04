@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search, BookMarked, LogIn, Square, ExternalLink, ThumbsUp, Languages, X, Loader2,
   RefreshCw, Terminal, AlertTriangle, CheckCircle2, Info, Cpu, EyeOff, ShieldAlert,
-  Plus, ChevronDown, ChevronUp, FileJson, FileSpreadsheet, ScrollText,
+  Plus, ChevronDown, ChevronUp, FileJson, FileSpreadsheet, ScrollText, Calendar,
 } from 'lucide-react';
 import {
   fetchZhihuStatus, zhihuLoginStream, zhihuSearchStream, cancelZhihuJob, getZhihuExportUrl,
@@ -33,7 +33,7 @@ function ResultCard({ item, index, showOriginal }) {
     <article className="nf-result-card" style={{ animationDelay: `${Math.min(index, 12) * 40}ms` }}>
       <div className="nf-result-rank">#{index + 1}</div>
       <div className="nf-result-body">
-        {/* Trường 1: Tiêu đề + Lượt vote */}
+        {/* Trường 1: Tiêu đề + Meta (Ngày đăng + Lượt vote) */}
         <div className="nf-result-top">
           <h3 className="nf-result-title">
             {item.link ? (
@@ -42,9 +42,16 @@ function ResultCard({ item, index, showOriginal }) {
               </a>
             ) : title}
           </h3>
-          <span className="nf-vote-pill" title={`${item.votes} lượt tán thành`}>
-            <ThumbsUp size={13} /> {formatVotes(item.votes)}
-          </span>
+          <div className="nf-result-meta-pills">
+            {item.date && (
+              <span className="nf-date-pill" title={`Ngày đăng / cập nhật: ${item.date}`}>
+                <Calendar size={13} /> {item.date}
+              </span>
+            )}
+            <span className="nf-vote-pill" title={`${item.votes} lượt tán thành`}>
+              <ThumbsUp size={13} /> {formatVotes(item.votes)}
+            </span>
+          </div>
         </div>
 
         {subTitle && <p className="nf-result-subtitle">Dịch: {subTitle}</p>}

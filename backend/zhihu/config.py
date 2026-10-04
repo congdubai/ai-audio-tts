@@ -45,6 +45,7 @@ SELECTORS = {
     "title": "h2 a, .ContentItem-title a, a[data-za-detail-view-element_name='Title']",
     "body": ".RichContent-inner, .RichText, .RichContent",
     "vote": ".VoteButton, [class*='Vote']",
+    "date": ".ContentItem-time, [itemprop='datePublished'], [itemprop='dateModified'], [class*='ContentItem-time'], [class*='SearchResult-time'], time, span[class*='time']",
 }
 
 # Dấu hiệu bị captcha / kiểm tra bảo mật
@@ -60,11 +61,21 @@ EXTRACT_JS = """
     const a = c.querySelector(sel.title);
     const body = c.querySelector(sel.body);
     const vote = c.querySelector(sel.vote);
+    const dateEl = c.querySelector(sel.date);
+    let dateStr = dateEl ? dateEl.innerText.trim() : '';
+
+    if (!dateStr) {
+      const fullText = c.innerText || '';
+      const m = fullText.match(/(?:发布于|编辑于|创建于)?\\s*(\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}|\\d{1,2}[-/.]\\d{1,2})/);
+      if (m) dateStr = m[0].trim();
+    }
+
     return {
       title: a ? a.innerText.trim() : (c.querySelector('h2') ? c.querySelector('h2').innerText.trim() : ''),
       link: a ? a.href : '',
       excerpt: body ? body.innerText.trim() : '',
-      votes_raw: vote ? vote.innerText.trim() : ''
+      votes_raw: vote ? vote.innerText.trim() : '',
+      date: dateStr
     };
   }).filter(x => x.title || x.excerpt);
 }

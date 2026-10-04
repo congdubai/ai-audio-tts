@@ -22,9 +22,9 @@ def to_json(results: list[dict], job_id: str) -> Path:
 def to_csv(results: list[dict], job_id: str) -> Path:
     path = _path(job_id, "csv")
     has_translation = any(r.get("title_vi") or r.get("excerpt_vi") for r in results)
-    fields = ["title", "excerpt", "link", "votes", "genre_vi", "genre_cn"]
+    fields = ["title", "excerpt", "date", "link", "votes", "genre_vi", "genre_cn"]
     if has_translation:
-        fields = ["title", "title_vi", "excerpt", "excerpt_vi", "link", "votes", "genre_vi", "genre_cn"]
+        fields = ["title", "title_vi", "excerpt", "excerpt_vi", "date", "link", "votes", "genre_vi", "genre_cn"]
 
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
