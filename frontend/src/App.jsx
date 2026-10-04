@@ -157,7 +157,11 @@ export default function App() {
 
         {/* Tab 3: Zhihu Novel Finder (giữ mounted để không mất tiến trình khi đổi tab) */}
         <main className="animate-fade-in" style={{ display: activeTab === 'novel' ? 'block' : 'none' }}>
-          <NovelFinder showToast={showToast} />
+          <NovelFinder showToast={showToast} onSendToTTS={(txt) => {
+            setText(txt);
+            setActiveTab('tts');
+            showToast('Đã chuyển nội dung sang tab Đọc TTS Ngọc Huyền!', 'success');
+          }} />
         </main>
 
         <footer className="footer-bar">

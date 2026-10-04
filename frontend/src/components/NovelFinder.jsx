@@ -3,9 +3,11 @@ import {
   Search, BookMarked, LogIn, Square, ExternalLink, ThumbsUp, Languages, X, Loader2,
   RefreshCw, Terminal, AlertTriangle, CheckCircle2, Info, Cpu, EyeOff, ShieldAlert,
   Plus, ChevronDown, ChevronUp, FileJson, FileSpreadsheet, ScrollText, Calendar,
+  BookOpen, Copy, Check, Volume2,
 } from 'lucide-react';
 import {
   fetchZhihuStatus, zhihuLoginStream, zhihuSearchStream, cancelZhihuJob, getZhihuExportUrl,
+  fetchZhihuArticleContent,
 } from '../services/api';
 
 const LOG_ICONS = {
@@ -23,7 +25,7 @@ const formatVotes = (n) => {
 
 const nowTime = () => new Date().toLocaleTimeString('vi-VN', { hour12: false });
 
-function ResultCard({ item, index, showOriginal }) {
+function ResultCard({ item, index, showOriginal, onViewContent }) {
   const [expanded, setExpanded] = useState(false);
   const title = (showOriginal && item.title_vi ? item.title_vi : item.title) || '(Không có tiêu đề)';
   const subTitle = item.title_vi && !showOriginal ? item.title_vi : null;
@@ -64,23 +66,155 @@ function ResultCard({ item, index, showOriginal }) {
           ))}
         </div>
 
-        {/* Trường 2: Nội dung / Đoạn trích */}
+        {/* Trường 2: Nội dung / Đoạn trích + Nút Xem nội dung */}
         {excerpt && (
-          <>
-            <p className={`nf-result-excerpt ${expanded ? 'expanded' : ''}`}>{excerpt}</p>
-            {excerpt.length > 220 && (
-              <button type="button" className="nf-expand-btn" onClick={() => setExpanded((v) => !v)}>
-                {expanded ? <><ChevronUp size={14} /> Thu gọn</> : <><ChevronDown size={14} /> Xem thêm đầy đủ</>}
-              </button>
-            )}
-          </>
+          <p className={`nf-result-excerpt ${expanded ? 'expanded' : ''}`}>{excerpt}</p>
         )}
+
+        <div className="nf-card-bottom-bar">
+          {excerpt && excerpt.length > 220 && (
+            <button type="button" className="nf-expand-btn" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? <><ChevronUp size={14} /> Thu gọn</> : <><ChevronDown size={14} /> Xem trích đoạn</>}
+            </button>
+          )}
+          {item.link && (
+            <button
+              type="button"
+              className="nf-btn-view-content"
+              onClick={() => onViewContent?.(item)}
+              id={`nf-view-content-${index}`}
+            >
+              <BookOpen size={13} /> Xem nội dung
+            </button>
+          )}
+        </div>
       </div>
     </article>
   );
 }
 
-export default function NovelFinder({ showToast }) {
+function ContentModal({ item, onClose, translateEnabled, model, showToast, onSendToTTS }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [data, setData] = useState(null);
+  const [viewVi, setViewVi] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetchZhihuArticleContent(item.link, translateEnabled, model);
+        if (active) {
+          setData(res);
+          setViewVi(Boolean(res.content_vi));
+        }
+      } catch (err) {
+        if (active) setError(err.message);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    load();
+    return () => { active = false; };
+  }, [item, translateEnabled, model]);
+
+  const activeText = (viewVi && data?.content_vi ? data.content_vi : data?.content_cn) || item.excerpt || '';
+
+  const handleCopy = () => {
+    if (!activeText) return;
+    navigator.clipboard.writeText(activeText);
+    setCopied(true);
+    showToast?.('Đã sao chép nội dung bài viết!', 'success');
+    setTimeout(() => setCopied(false), 3000);
+  };
+
+  const handleSendTTS = () => {
+    if (!activeText) return;
+    onSendToTTS?.(activeText);
+    onClose();
+  };
+
+  return (
+    <div className="nf-modal-overlay" onClick={onClose}>
+      <div className="nf-modal-container" onClick={(e) => e.stopPropagation()}>
+        <div className="nf-modal-header">
+          <div className="nf-modal-title-group">
+            <BookOpen size={22} className="nf-modal-icon" />
+            <div>
+              <h3 className="nf-modal-title">{data?.title || item.title_vi || item.title || 'Nội dung bài viết'}</h3>
+              <div className="nf-modal-meta">
+                {item.date && <span><Calendar size={13} /> {item.date}</span>}
+                <span><ThumbsUp size={13} /> {formatVotes(item.votes)} lượt tán thành</span>
+                {data?.word_count > 0 && <span><ScrollText size={13} /> ~{data.word_count} ký tự</span>}
+              </div>
+            </div>
+          </div>
+          <button type="button" className="nf-modal-close" onClick={onClose} aria-label="Đóng">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="nf-modal-toolbar">
+          <div className="nf-lang-toggle" role="group">
+            <button
+              type="button"
+              className={!viewVi ? 'active' : ''}
+              onClick={() => setViewVi(false)}
+            >
+              Tiếng Trung (原著)
+            </button>
+            <button
+              type="button"
+              className={viewVi ? 'active' : ''}
+              disabled={!data?.content_vi}
+              onClick={() => setViewVi(true)}
+            >
+              Tiếng Việt (Dịch)
+            </button>
+          </div>
+
+          <div className="nf-modal-actions">
+            <button type="button" className="nf-modal-btn" onClick={handleCopy} disabled={!activeText}>
+              {copied ? <Check size={14} /> : <Copy size={14} />} {copied ? 'Đã chép' : 'Sao chép'}
+            </button>
+            <button type="button" className="nf-modal-btn primary" onClick={handleSendTTS} disabled={!activeText}>
+              <Volume2 size={14} /> Đọc bằng TTS Ngọc Huyền
+            </button>
+          </div>
+        </div>
+
+        <div className="nf-modal-body">
+          {loading && (
+            <div className="nf-modal-loading">
+              <Loader2 size={36} className="spin-icon" />
+              <p>Đang tải toàn bộ nội dung bài viết từ Zhihu...</p>
+            </div>
+          )}
+
+          {error && (
+            <div className="nf-alert error">
+              <ShieldAlert size={16} />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {!loading && !error && (
+            <div className="nf-article-content">
+              {activeText.split('\n\n').map((paragraph, idx) => (
+                <p key={idx}>{paragraph}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function NovelFinder({ showToast, onSendToTTS }) {
   const [status, setStatus] = useState(null);
   const [statusLoading, setStatusLoading] = useState(false);
 
@@ -101,6 +235,7 @@ export default function NovelFinder({ showToast }) {
   const [error, setError] = useState(null);
   const [showOriginal, setShowOriginal] = useState(false);
   const [filter, setFilter] = useState('');
+  const [activeModalItem, setActiveModalItem] = useState(null);
 
   const jobIdRef = useRef(null);
   const abortRef = useRef(null);
@@ -506,7 +641,13 @@ export default function NovelFinder({ showToast }) {
               </div>
               <div className="nf-results-list">
                 {filteredResults.map((it, i) => (
-                  <ResultCard key={it.link || i} item={it} index={i} showOriginal={showOriginal} />
+                  <ResultCard
+                    key={it.link || i}
+                    item={it}
+                    index={i}
+                    showOriginal={showOriginal}
+                    onViewContent={(selectedItem) => setActiveModalItem(selectedItem)}
+                  />
                 ))}
                 {filteredResults.length === 0 && <p className="nf-log-empty">Không có kết quả khớp bộ lọc.</p>}
               </div>
@@ -528,6 +669,17 @@ export default function NovelFinder({ showToast }) {
           )}
         </div>
       </section>
+
+      {activeModalItem && (
+        <ContentModal
+          item={activeModalItem}
+          onClose={() => setActiveModalItem(null)}
+          translateEnabled={translateEnabled}
+          model={model}
+          showToast={showToast}
+          onSendToTTS={onSendToTTS}
+        />
+      )}
     </div>
   );
 }

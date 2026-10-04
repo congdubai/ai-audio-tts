@@ -218,3 +218,35 @@ def run_search(job: Job, emit, genres: list[str], scrolls: int, combine: bool = 
         log(f"Không có kết quả cho: {', '.join(empty_genres)}", "warning")
     progress(100, f"Hoàn tất: {len(results)} kết quả.", stage="done")
     return {"job_id": job.id, "count": len(results), "results": results}
+
+
+def fetch_article_content(url: str, translate_enabled: bool = False, model: str = None,
+                          headless: bool = True) -> dict:
+    model = (model or config.OLLAMA_DEFAULT_MODEL).strip()
+    if translate_enabled:
+        translate.check_ollama(model)
+
+    with ZhihuSession(headless=headless) as s:
+        if not s.is_logged_in():
+            raise ScraperError("Chưa đăng nhập Zhihu. Hãy bấm 'Đăng nhập Zhihu' trước.")
+        data = s.fetch_content(url)
+
+    content_cn = data.get("content", "")
+    content_vi = ""
+    title_vi = ""
+
+    if translate_enabled and content_cn:
+        content_to_trans = content_cn[:config.MAX_TRANSLATE_CHARS * 2]
+        content_vi = translate.to_vietnamese(content_to_trans, model=model)
+        if data.get("title"):
+            title_vi = translate.to_vietnamese(data["title"], model=model)
+
+    return {
+        "url": url,
+        "title": data.get("title", ""),
+        "title_vi": title_vi,
+        "content_cn": content_cn,
+        "content_vi": content_vi,
+        "word_count": data.get("word_count", 0),
+    }
+

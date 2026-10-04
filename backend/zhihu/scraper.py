@@ -300,3 +300,68 @@ class ZhihuSession:
                 "hãy kiểm tra SELECTORS trong backend/zhihu/config.py."
             )
         return out
+
+    # ---------- lấy nội dung chi tiết bài viết ----------
+    def fetch_content(self, target_url: str, wait_captcha: bool = False) -> dict:
+        """Tải trang bài viết hoặc câu trả lời Zhihu và trích xuất nội dung đầy đủ."""
+        try:
+            self._check_cancel()
+            self.page.goto(target_url, wait_until="domcontentloaded")
+            self.page.wait_for_timeout(config.PAGE_LOAD_WAIT_MS)
+
+            if self._is_signin_page():
+                _LOGIN_FLAG.unlink(missing_ok=True)
+                raise NotLoggedInError("Zhihu yêu cầu đăng nhập. Hãy bấm 'Đăng nhập Zhihu' trước.")
+            self._handle_captcha(wait_captcha)
+
+            try:
+                self.page.wait_for_selector(".RichText, .Post-RichText, .QuestionAnswer-content", timeout=6000)
+            except Exception:
+                pass
+
+            # Bấm nút 'Mở rộng' nếu bài viết bị thu gọn
+            try:
+                self.page.evaluate("""() => {
+                    document.querySelectorAll('.Button.ContentItem-expandButton, .QuestionRich-expandButton').forEach(btn => btn.click());
+                }""")
+                self.page.wait_for_timeout(1000)
+            except Exception:
+                pass
+
+            data = self.page.evaluate("""() => {
+                const titleEl = document.querySelector('h1.QuestionHeader-title, h1.Post-Title, h1, .ContentItem-title');
+                const title = titleEl ? titleEl.innerText.trim() : '';
+
+                const container = document.querySelector('.QuestionAnswer-content .RichText, .Post-RichText, .RichContent-inner, .RichText');
+                if (!container) return { title, text: '' };
+
+                const ps = Array.from(container.querySelectorAll('p, div.RichText-paragraph, blockquote'));
+                let text = '';
+                if (ps.length > 0) {
+                    text = ps.map(p => p.innerText.trim()).filter(Boolean).join('\\n\\n');
+                } else {
+                    text = container.innerText.trim();
+                }
+
+                return { title, text };
+            }""")
+
+            title = data.get("title", "")
+            text = data.get("text", "")
+            if not text:
+                text = self._page_text()
+
+            if "您当前请求存在异常" in text or "40362" in text or "安全验证" in text:
+                raise CaptchaError("Zhihu tạm thời hạn chế truy cập bài viết này. Hãy mở lại trình duyệt đăng nhập hoặc thử lại sau ít phút.")
+
+            return {
+                "title": title,
+                "content": text,
+                "url": target_url,
+                "word_count": len(text)
+            }
+        except (JobCancelled, ScraperError):
+            raise
+        except Exception as e:
+            raise _friendly_playwright_error(e)
+

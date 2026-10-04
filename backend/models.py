@@ -40,3 +40,9 @@ class ZhihuSearchRequest(BaseModel):
     headless: bool = Field(False, description="Chạy trình duyệt ẩn")
     wait_captcha: bool = Field(False, description="Chờ người dùng tự giải captcha thay vì dừng")
 
+class ZhihuFetchContentRequest(BaseModel):
+    url: str = Field(..., description="URL bài viết hoặc câu trả lời Zhihu")
+    translate: bool = Field(False, description="Dịch toàn bộ bài viết sang tiếng Việt bằng Ollama")
+    model: Optional[str] = Field(None, description="Model Ollama, mặc định qwen2.5:7b")
+
+

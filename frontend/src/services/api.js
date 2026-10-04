@@ -320,3 +320,19 @@ export async function cancelZhihuJob(jobId) {
 export function getZhihuExportUrl(jobId, format = 'csv') {
   return `${API_BASE_URL}/api/zhihu/export/${jobId}?format=${format}`;
 }
+
+export async function fetchZhihuArticleContent(url, translate = false, model = null) {
+  const res = await fetch(`${API_BASE_URL}/api/zhihu/fetch-content`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, translate, model }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: 'Không thể lấy nội dung bài viết' }));
+    throw new Error(errorData.detail || 'Lỗi kết nối máy chủ');
+  }
+
+  return await res.json();
+}
+

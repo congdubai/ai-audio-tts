@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from tts_service import TTSEngine, OUTPUTS_DIR
 from video_service import VideoDubbingService, VIDEO_OUTPUTS_DIR, VIDEO_UPLOADS_DIR
 from db import init_db, add_history_entry, get_history, delete_history_entry, add_video_history_entry, get_video_history
-from models import SynthesizeRequest, SynthesizeResponse, HistoryItem, ZhihuSearchRequest
+from models import SynthesizeRequest, SynthesizeResponse, HistoryItem, ZhihuSearchRequest, ZhihuFetchContentRequest
 from zhihu import service as zhihu_service
 from zhihu import export as zhihu_export
 from zhihu.scraper import ScraperError, JobCancelled
@@ -548,6 +548,25 @@ async def zhihu_export_file(job_id: str, format: str = "csv"):
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{path.name}"'},
     )
+
+@app.post("/api/zhihu/fetch-content")
+async def zhihu_fetch_content(req: ZhihuFetchContentRequest):
+    try:
+        res = await asyncio.get_running_loop().run_in_executor(
+            None,
+            lambda: zhihu_service.fetch_article_content(
+                url=req.url,
+                translate_enabled=req.translate,
+                model=req.model,
+                headless=True
+            )
+        )
+        return res
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Lỗi khi lấy nội dung bài viết: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn
