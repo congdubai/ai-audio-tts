@@ -100,25 +100,22 @@ function ContentModal({ item, onClose, translateEnabled, model, showToast, onSen
   const [viewVi, setViewVi] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetchZhihuArticleContent(item.link, translateEnabled, model);
-        if (active) {
-          setData(res);
-          setViewVi(Boolean(res.content_vi));
-        }
-      } catch (err) {
-        if (active) setError(err.message);
-      } finally {
-        if (active) setLoading(false);
-      }
+  const loadContent = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchZhihuArticleContent(item.link, translateEnabled, model);
+      setData(res);
+      setViewVi(Boolean(res.content_vi));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
     }
-    load();
-    return () => { active = false; };
+  };
+
+  useEffect(() => {
+    loadContent();
   }, [item, translateEnabled, model]);
 
   const activeText = (viewVi && data?.content_vi ? data.content_vi : data?.content_cn) || item.excerpt || '';
@@ -195,9 +192,14 @@ function ContentModal({ item, onClose, translateEnabled, model, showToast, onSen
           )}
 
           {error && (
-            <div className="nf-alert error">
-              <ShieldAlert size={16} />
-              <span>{error}</span>
+            <div className="nf-modal-error-box">
+              <div className="nf-alert error">
+                <ShieldAlert size={16} />
+                <span>{error}</span>
+              </div>
+              <button type="button" className="nf-modal-btn primary" onClick={loadContent} style={{ marginTop: 12 }}>
+                <RefreshCw size={14} /> Thử tải lại
+              </button>
             </div>
           )}
 

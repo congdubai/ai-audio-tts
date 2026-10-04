@@ -102,8 +102,9 @@ class ZhihuSession:
 
     # ---------- vòng đời ----------
     def __enter__(self):
-        if not _BROWSER_LOCK.acquire(blocking=False):
-            raise BrowserBusyError("Đang có một phiên Zhihu khác chạy (đăng nhập hoặc tìm kiếm). Hãy đợi hoặc huỷ phiên đó.")
+        acquired = _BROWSER_LOCK.acquire(timeout=20.0)
+        if not acquired:
+            raise BrowserBusyError("Hệ thống đang bận chạy một phiên tìm kiếm hoặc đăng nhập khác. Vui lòng đợi vài giây rồi thử lại.")
         try:
             try:
                 from playwright.sync_api import sync_playwright
